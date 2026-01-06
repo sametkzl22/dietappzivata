@@ -1,0 +1,251 @@
+"""
+Pydantic Schemas for Diet & Fitness API.
+
+These schemas handle request/response validation and serialization.
+"""
+
+from typing import Optional, List
+from enum import Enum
+from pydantic import BaseModel, Field
+
+
+# ============================================================================
+# Enums
+# ============================================================================
+
+class ActivityLevel(str, Enum):
+    """Activity level for TDEE calculation."""
+    sedentary = "sedentary"
+    light = "light"
+    moderate = "moderate"
+    very = "very"
+    athlete = "athlete"
+
+
+class MealType(str, Enum):
+    """Meal type classification."""
+    breakfast = "breakfast"
+    lunch = "lunch"
+    dinner = "dinner"
+    snack = "snack"
+
+
+# ============================================================================
+# User Schemas
+# ============================================================================
+
+class UserBase(BaseModel):
+    """Base user schema with common attributes."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    height_cm: float = Field(..., gt=0, description="Height in centimeters")
+    weight_kg: float = Field(..., gt=0, description="Weight in kilograms")
+    gender: str = Field(..., pattern="^(male|female)$", description="Gender: 'male' or 'female'")
+    age: int = Field(..., gt=0, lt=150, description="Age in years")
+    activity_level: ActivityLevel
+    waist_cm: float = Field(..., gt=0, description="Waist circumference in cm")
+    neck_cm: float = Field(..., gt=0, description="Neck circumference in cm")
+    hip_cm: Optional[float] = Field(None, gt=0, description="Hip circumference in cm (required for females)")
+
+
+class UserCreate(UserBase):
+    """Schema for creating a new user."""
+    pass
+
+
+class UserUpdate(BaseModel):
+    """Schema for updating user data (all fields optional)."""
+    name: Optional[str] = None
+    email: Optional[str] = None
+    height_cm: Optional[float] = Field(None, gt=0)
+    weight_kg: Optional[float] = Field(None, gt=0)
+    gender: Optional[str] = Field(None, pattern="^(male|female)$")
+    age: Optional[int] = Field(None, gt=0, lt=150)
+    activity_level: Optional[ActivityLevel] = None
+    waist_cm: Optional[float] = Field(None, gt=0)
+    neck_cm: Optional[float] = Field(None, gt=0)
+    hip_cm: Optional[float] = Field(None, gt=0)
+
+
+class UserResponse(UserBase):
+    """Schema for user response with ID."""
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+class HealthMetrics(BaseModel):
+    """User health metrics response."""
+    user_id: int
+    bmi: float = Field(..., description="Body Mass Index")
+    body_fat_percent: float = Field(..., description="Body fat percentage (Navy Method)")
+    bmr: float = Field(..., description="Basal Metabolic Rate (kcal/day)")
+    tdee: float = Field(..., description="Total Daily Energy Expenditure (kcal/day)")
+
+
+# ============================================================================
+# Ingredient Schemas
+# ============================================================================
+
+class IngredientBase(BaseModel):
+    """Base ingredient schema."""
+    name: str
+    unit: str = Field(..., description="Unit of measurement (e.g., 'grams', 'cups')")
+    kcal_per_unit: float = Field(..., ge=0, description="Calories per unit")
+
+
+class IngredientCreate(IngredientBase):
+    """Schema for creating an ingredient."""
+    pass
+
+
+class IngredientResponse(IngredientBase):
+    """Schema for ingredient response."""
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Recipe Schemas
+# ============================================================================
+
+class RecipeIngredientBase(BaseModel):
+    """Recipe ingredient junction schema."""
+    ingredient_id: int
+    quantity: float = Field(..., gt=0)
+
+
+class RecipeIngredientResponse(BaseModel):
+    """Recipe ingredient with details."""
+    ingredient_id: int
+    ingredient_name: str
+    quantity: float
+    unit: str
+
+    class Config:
+        from_attributes = True
+
+
+class RecipeBase(BaseModel):
+    """Base recipe schema with macros."""
+    name: str
+    meal_type: MealType
+    kcal: float = Field(..., ge=0, description="Total calories")
+    protein_g: float = Field(..., ge=0, description="Protein in grams")
+    carbs_g: float = Field(..., ge=0, description="Carbohydrates in grams")
+    fat_g: float = Field(..., ge=0, description="Fat in grams")
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+
+
+class RecipeCreate(RecipeBase):
+    """Schema for creating a recipe."""
+    ingredients: Optional[List[RecipeIngredientBase]] = []
+
+
+class RecipeResponse(RecipeBase):
+    """Schema for recipe response."""
+    id: int
+    ingredients: List[RecipeIngredientResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class RecipeSimple(BaseModel):
+    """Simplified recipe for meal plan display."""
+    id: int
+    name: str
+    meal_type: MealType
+    kcal: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    pantry_score: Optional[float] = Field(None, description="Percentage of ingredients user owns")
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================================
+# Pantry Schemas
+# ============================================================================
+
+class PantryItemBase(BaseModel):
+    """Base pantry item schema."""
+    ingredient_id: int
+    quantity: float = Field(..., gt=0)
+
+
+class PantryItemCreate(PantryItemBase):
+    """Schema for adding item to pantry."""
+    pass
+
+
+class PantryItemResponse(BaseModel):
+    """Pantry item response with ingredient details."""
+    id: int
+    user_id: int
+    ingredient_id: int
+    ingredient_name: str
+    quantity: float
+    unit: str
+
+    class Config:
+        from_attributes = True
+
+
+class PantryUpdate(BaseModel):
+    """Schema for updating pantry quantity."""
+    quantity: float = Field(..., gt=0)
+
+
+# ============================================================================
+# Meal Plan Schemas
+# ============================================================================
+
+class MealPlanRequest(BaseModel):
+    """Request for generating a meal plan."""
+    user_id: int
+    deficit: int = Field(
+        default=-500,
+        ge=-1000,
+        le=500,
+        description="Calorie deficit/surplus from TDEE (-500 for weight loss)"
+    )
+
+
+class MealSlot(BaseModel):
+    """A single meal slot in the plan."""
+    meal_type: MealType
+    target_kcal: float
+    recommended_recipes: List[RecipeSimple]
+
+
+class MealPlanResponse(BaseModel):
+    """Generated meal plan response."""
+    user_id: int
+    tdee: float
+    target_daily_kcal: float
+    deficit: int
+    meals: List[MealSlot]
+    total_macros: dict
+
+
+# ============================================================================
+# AI Chat Schemas
+# ============================================================================
+
+class ChatRequest(BaseModel):
+    """Request for AI coach chat."""
+    user_id: Optional[int] = None
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+class ChatResponse(BaseModel):
+    """Response from AI coach."""
+    response: str
+    user_context_used: bool = False
