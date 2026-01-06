@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
     Scale,
     Target,
@@ -19,13 +20,17 @@ import {
     getDailyPlan,
     mockUser,
     mockHealthMetrics,
-    mockMealPlan,
+    isAuthenticated,
+    getStoredUser,
+    getCurrentUser,
+    getCurrentUserHealth,
     type User,
     type HealthMetrics,
     type MealPlan
 } from '@/lib/api';
 
 export default function DashboardPage() {
+    const router = useRouter();
     const [user, setUser] = useState<User | null>(null);
     const [healthMetrics, setHealthMetrics] = useState<HealthMetrics | null>(null);
     const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
@@ -37,26 +42,46 @@ export default function DashboardPage() {
     // Fetch initial data
     useEffect(() => {
         async function fetchData() {
+            // Check authentication
+            if (!isAuthenticated()) {
+                router.push('/login');
+                return;
+            }
+
             setIsLoading(true);
             setError(null);
 
             try {
-                const [userData, metricsData, planData] = await Promise.all([
-                    getUser(1),
-                    getHealthMetrics(1),
-                    getDailyPlan(1, -500),
-                ]);
+                // Get current user from token
+                const currentUser = await getCurrentUser();
+                if (!currentUser) {
+                    router.push('/login');
+                    return;
+                }
 
-                setUser(userData);
-                setHealthMetrics(metricsData);
-                setMealPlan(planData);
+                setUser(currentUser);
+
+                // Fetch health metrics
+                const metricsData = await getCurrentUserHealth();
+                if (metricsData) {
+                    setHealthMetrics(metricsData);
+                }
+
+                // Try to get meal plan
+                try {
+                    const planData = await getDailyPlan(currentUser.id, -500);
+                    setMealPlan(planData);
+                } catch {
+                    // Meal plan might fail if no recipes exist
+                    console.log('No meal plan available');
+                }
+
                 setUseMockData(false);
             } catch (err) {
                 console.error('Failed to fetch data from API, using mock data:', err);
                 // Fallback to mock data
                 setUser(mockUser);
                 setHealthMetrics(mockHealthMetrics);
-                setMealPlan(mockMealPlan);
                 setUseMockData(true);
             } finally {
                 setIsLoading(false);
@@ -64,7 +89,7 @@ export default function DashboardPage() {
         }
 
         fetchData();
-    }, []);
+    }, [router]);
 
     // Generate new plan
     const handleGeneratePlan = async () => {

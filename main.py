@@ -3,6 +3,7 @@ Diet & Fitness API - FastAPI Application
 
 A complete backend API for diet and fitness tracking with:
 - User management with health calculations (BMI, Body Fat, TDEE)
+- JWT Authentication & Admin Roles
 - Recipe and ingredient management
 - Pantry tracking system
 - AI-powered meal plan generation
@@ -13,8 +14,10 @@ Docs: http://localhost:8000/docs
 """
 
 import os
+from datetime import timedelta
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -24,7 +27,8 @@ load_dotenv()
 from database import get_db, init_db
 from models import User, Recipe, Ingredient, Pantry, RecipeIngredient, ActivityLevel, MealType
 from schemas import (
-    UserCreate, UserUpdate, UserResponse, HealthMetrics,
+    UserCreate, UserUpdate, UserResponse, UserLogin, HealthMetrics,
+    Token,
     RecipeCreate, RecipeResponse, RecipeSimple,
     IngredientCreate, IngredientResponse,
     PantryItemCreate, PantryItemResponse, PantryUpdate,
@@ -33,6 +37,14 @@ from schemas import (
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
+from auth import (
+    get_password_hash,
+    create_access_token,
+    authenticate_user,
+    get_current_user,
+    get_current_admin,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
 
 # ============================================================================
 # Application Setup
@@ -44,6 +56,7 @@ app = FastAPI(
 A comprehensive backend API for diet and fitness tracking.
 
 ## Features
+- **Authentication**: JWT-based auth with admin roles
 - **User Management**: Create and manage users with body measurements
 - **Health Metrics**: Calculate BMI, Body Fat %, BMR, and TDEE
 - **Recipe System**: Manage recipes with macro nutritional data
@@ -57,7 +70,7 @@ A comprehensive backend API for diet and fitness tracking.
 - **BMR**: Mifflin-St Jeor Equation
 - **TDEE**: BMR × Activity Multiplier
     """,
-    version="1.0.0",
+    version="1.1.0",
     contact={
         "name": "API Support",
         "email": "support@example.com"
@@ -75,25 +88,33 @@ def on_startup():
 
 
 # ============================================================================
-# User Endpoints
+# Authentication Endpoints
 # ============================================================================
 
 @app.post(
-    "/users/",
+    "/auth/signup",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
-    tags=["Users"],
-    summary="Create a new user"
+    tags=["Authentication"],
+    summary="Register a new user"
 )
-def create_user(user: UserCreate, db: Session = Depends(get_db)):
+def signup(user: UserCreate, db: Session = Depends(get_db)):
     """
-    Create a new user with body measurements.
+    Create a new user account with password.
     
-    Required measurements for health calculations:
-    - height_cm, weight_kg, age, gender
-    - waist_cm, neck_cm (for body fat calculation)
-    - hip_cm (required for females for body fat calculation)
+    - **email**: Unique email address (required)
+    - **password**: Minimum 6 characters
+    - **Required body measurements**: height_cm, weight_kg, age, gender, waist_cm, neck_cm
+    - **hip_cm**: Required for females
     """
+    # Check if email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
     # Validate hip measurement for females
     if user.gender.lower() == "female" and user.hip_cm is None:
         raise HTTPException(
@@ -101,9 +122,225 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
             detail="Hip measurement is required for female users"
         )
     
+    # Hash the password
+    hashed_password = get_password_hash(user.password)
+    
     db_user = User(
         name=user.name,
         email=user.email,
+        hashed_password=hashed_password,
+        height_cm=user.height_cm,
+        weight_kg=user.weight_kg,
+        gender=user.gender,
+        age=user.age,
+        activity_level=ActivityLevel(user.activity_level.value),
+        waist_cm=user.waist_cm,
+        neck_cm=user.neck_cm,
+        hip_cm=user.hip_cm
+    )
+    
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    
+    return db_user
+
+
+@app.post(
+    "/auth/login",
+    response_model=Token,
+    tags=["Authentication"],
+    summary="Login and get access token"
+)
+def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    """
+    Authenticate user and return JWT access token.
+    
+    Use this token in the Authorization header as: `Bearer <token>`
+    """
+    user = authenticate_user(db, form_data.username, form_data.password)
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=access_token_expires
+    )
+    
+    return Token(access_token=access_token, token_type="bearer")
+
+
+@app.get(
+    "/users/me",
+    response_model=UserResponse,
+    tags=["Authentication"],
+    summary="Get current user profile"
+)
+def get_current_user_profile(current_user: User = Depends(get_current_user)):
+    """Get the profile of the currently authenticated user."""
+    return current_user
+
+
+@app.get(
+    "/users/me/health",
+    response_model=HealthMetrics,
+    tags=["Authentication"],
+    summary="Get current user health metrics"
+)
+def get_current_user_health(current_user: User = Depends(get_current_user)):
+    """Get health metrics (BMI, Body Fat %, BMR, TDEE) for the current user."""
+    try:
+        metrics = current_user.get_health_metrics()
+        return HealthMetrics(user_id=current_user.id, **metrics)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ============================================================================
+# Admin Endpoints
+# ============================================================================
+
+@app.get(
+    "/admin/users",
+    tags=["Admin"],
+    summary="List all users (Admin only)"
+)
+def admin_list_users(
+    skip: int = 0,
+    limit: int = 100,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    **Admin Only** - Get all users in the system with statistics.
+    
+    Requires: `is_superuser = True`
+    """
+    users = db.query(User).offset(skip).limit(limit).all()
+    total_users = db.query(User).count()
+    active_users = db.query(User).filter(User.is_active == True).count()
+    admin_users = db.query(User).filter(User.is_superuser == True).count()
+    
+    return {
+        "statistics": {
+            "total_users": total_users,
+            "active_users": active_users,
+            "inactive_users": total_users - active_users,
+            "admin_users": admin_users
+        },
+        "users": [
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "is_active": u.is_active,
+                "is_superuser": u.is_superuser,
+                "gender": u.gender,
+                "age": u.age
+            }
+            for u in users
+        ]
+    }
+
+
+@app.patch(
+    "/admin/users/{user_id}/toggle-admin",
+    tags=["Admin"],
+    summary="Toggle user admin status (Admin only)"
+)
+def toggle_user_admin(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """**Admin Only** - Toggle superuser status for a user."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Cannot modify your own admin status")
+    
+    user.is_superuser = not user.is_superuser
+    db.commit()
+    
+    return {
+        "message": f"User {user.email} admin status updated",
+        "is_superuser": user.is_superuser
+    }
+
+
+@app.patch(
+    "/admin/users/{user_id}/toggle-active",
+    tags=["Admin"],
+    summary="Activate/Deactivate user (Admin only)"
+)
+def toggle_user_active(
+    user_id: int,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """**Admin Only** - Toggle active status for a user."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if user.id == current_admin.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+    
+    user.is_active = not user.is_active
+    db.commit()
+    
+    return {
+        "message": f"User {user.email} status updated",
+        "is_active": user.is_active
+    }
+
+
+# ============================================================================
+# User Endpoints (Legacy - kept for backward compatibility)
+# ============================================================================
+
+@app.post(
+    "/users/",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Users"],
+    summary="Create a new user (use /auth/signup instead)"
+)
+def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    """
+    Create a new user with body measurements.
+    
+    **Deprecated**: Use `/auth/signup` for new registrations.
+    """
+    # Check if email already exists
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered"
+        )
+    
+    # Validate hip measurement for females
+    if user.gender.lower() == "female" and user.hip_cm is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Hip measurement is required for female users"
+        )
+    
+    hashed_password = get_password_hash(user.password)
+    
+    db_user = User(
+        name=user.name,
+        email=user.email,
+        hashed_password=hashed_password,
         height_cm=user.height_cm,
         weight_kg=user.weight_kg,
         gender=user.gender,
@@ -127,8 +364,13 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
     tags=["Users"],
     summary="List all users"
 )
-def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get a list of all users with pagination."""
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a list of all users with pagination. Requires authentication."""
     users = db.query(User).offset(skip).limit(limit).all()
     return users
 
@@ -139,8 +381,12 @@ def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     tags=["Users"],
     summary="Get user by ID"
 )
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    """Get a specific user by their ID."""
+def get_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific user by their ID. Requires authentication."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -153,8 +399,17 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     tags=["Users"],
     summary="Update user"
 )
-def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
-    """Update user data (partial update supported)."""
+def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update user data (partial update supported). Users can only update their own data."""
+    # Only allow users to update themselves (or admins can update anyone)
+    if current_user.id != user_id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized to update this user")
+    
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -176,8 +431,15 @@ def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get
     tags=["Users"],
     summary="Delete user"
 )
-def delete_user(user_id: int, db: Session = Depends(get_db)):
-    """Delete a user by ID."""
+def delete_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a user by ID. Only admins or the user themselves can delete."""
+    if current_user.id != user_id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this user")
+    
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -192,9 +454,13 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     tags=["Users"],
     summary="Get user health metrics"
 )
-def get_user_health_metrics(user_id: int, db: Session = Depends(get_db)):
+def get_user_health_metrics(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Calculate and return user's health metrics.
+    Calculate and return user's health metrics. Requires authentication.
     
     Returns:
     - **BMI**: Body Mass Index
@@ -224,7 +490,11 @@ def get_user_health_metrics(user_id: int, db: Session = Depends(get_db)):
     tags=["Ingredients"],
     summary="Create a new ingredient"
 )
-def create_ingredient(ingredient: IngredientCreate, db: Session = Depends(get_db)):
+def create_ingredient(
+    ingredient: IngredientCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Create a new ingredient for use in recipes and pantry."""
     # Check if ingredient already exists
     existing = db.query(Ingredient).filter(Ingredient.name == ingredient.name).first()
@@ -275,7 +545,11 @@ def get_ingredient(ingredient_id: int, db: Session = Depends(get_db)):
     tags=["Recipes"],
     summary="Create a new recipe"
 )
-def create_recipe(recipe: RecipeCreate, db: Session = Depends(get_db)):
+def create_recipe(
+    recipe: RecipeCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Create a new recipe with macro nutritional information.
     
@@ -405,8 +679,17 @@ def _format_recipe_response(recipe: Recipe, db: Session) -> dict:
     tags=["Pantry"],
     summary="Add item to user's pantry"
 )
-def add_to_pantry(user_id: int, item: PantryItemCreate, db: Session = Depends(get_db)):
+def add_to_pantry(
+    user_id: int,
+    item: PantryItemCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Add an ingredient to user's pantry or update quantity if exists."""
+    # Only allow users to modify their own pantry
+    if current_user.id != user_id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     # Verify user exists
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -456,7 +739,11 @@ def add_to_pantry(user_id: int, item: PantryItemCreate, db: Session = Depends(ge
     tags=["Pantry"],
     summary="Get user's pantry"
 )
-def get_pantry(user_id: int, db: Session = Depends(get_db)):
+def get_pantry(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Get all items in user's pantry."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -489,9 +776,13 @@ def update_pantry_item(
     user_id: int,
     ingredient_id: int,
     update: PantryUpdate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update the quantity of an item in user's pantry."""
+    if current_user.id != user_id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     pantry_item = db.query(Pantry).filter(
         Pantry.user_id == user_id,
         Pantry.ingredient_id == ingredient_id
@@ -522,8 +813,16 @@ def update_pantry_item(
     tags=["Pantry"],
     summary="Remove item from pantry"
 )
-def remove_from_pantry(user_id: int, ingredient_id: int, db: Session = Depends(get_db)):
+def remove_from_pantry(
+    user_id: int,
+    ingredient_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """Remove an ingredient from user's pantry."""
+    if current_user.id != user_id and not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
     pantry_item = db.query(Pantry).filter(
         Pantry.user_id == user_id,
         Pantry.ingredient_id == ingredient_id
@@ -546,7 +845,11 @@ def remove_from_pantry(user_id: int, ingredient_id: int, db: Session = Depends(g
     tags=["Meal Planning"],
     summary="Generate personalized meal plan"
 )
-def generate_meal_plan(request: MealPlanRequest, db: Session = Depends(get_db)):
+def generate_meal_plan(
+    request: MealPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Generate a personalized daily meal plan based on user's TDEE.
     
@@ -603,15 +906,16 @@ def generate_meal_plan(request: MealPlanRequest, db: Session = Depends(get_db)):
     tags=["AI Coach"],
     summary="Chat with AI fitness coach"
 )
-def chat_with_ai(request: ChatRequest, db: Session = Depends(get_db)):
+def chat_with_ai(
+    request: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Send a message to the AI fitness coach.
     
     If user_id is provided, the AI will have access to the user's
     health metrics for personalized responses.
-    
-    **Note:** This is a placeholder endpoint. Implement the Gemini API
-    in `ai_service.py` to enable actual AI responses.
     """
     user_context = None
     
@@ -654,7 +958,7 @@ def chat_with_ai(request: ChatRequest, db: Session = Depends(get_db)):
 )
 def health_check():
     """Check if the API is running."""
-    return {"status": "healthy", "version": "1.0.0"}
+    return {"status": "healthy", "version": "1.1.0"}
 
 
 # ============================================================================

@@ -37,7 +37,7 @@ class MealType(str, Enum):
 class UserBase(BaseModel):
     """Base user schema with common attributes."""
     name: Optional[str] = None
-    email: Optional[str] = None
+    email: str = Field(..., description="User email address")
     height_cm: float = Field(..., gt=0, description="Height in centimeters")
     weight_kg: float = Field(..., gt=0, description="Weight in kilograms")
     gender: str = Field(..., pattern="^(male|female)$", description="Gender: 'male' or 'female'")
@@ -49,8 +49,14 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    """Schema for creating a new user."""
-    pass
+    """Schema for creating a new user with password."""
+    password: str = Field(..., min_length=6, description="User password (min 6 characters)")
+
+
+class UserLogin(BaseModel):
+    """Schema for user login."""
+    email: str = Field(..., description="User email")
+    password: str = Field(..., description="User password")
 
 
 class UserUpdate(BaseModel):
@@ -70,9 +76,26 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     """Schema for user response with ID."""
     id: int
+    is_active: bool = True
+    is_superuser: bool = False
 
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# Authentication Schemas
+# ============================================================================
+
+class Token(BaseModel):
+    """JWT Token response."""
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    """Token payload data."""
+    email: Optional[str] = None
 
 
 class HealthMetrics(BaseModel):

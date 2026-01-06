@@ -7,7 +7,7 @@ with health calculation methods (BMI, Body Fat %, TDEE).
 
 import math
 import enum
-from sqlalchemy import Column, Integer, Float, String, Enum, ForeignKey
+from sqlalchemy import Column, Integer, Float, String, Boolean, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -43,7 +43,12 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=True)
-    email = Column(String, unique=True, nullable=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    
+    # Authentication fields
+    hashed_password = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_superuser = Column(Boolean, default=False, nullable=False)
     
     # Body measurements
     height_cm = Column(Float, nullable=False)
