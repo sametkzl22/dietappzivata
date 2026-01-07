@@ -102,8 +102,52 @@ export interface MealPlan {
         protein_g: number;
         carbs_g: number;
         fat_g: number;
-        note?: string;
     };
+}
+
+export interface DayMeal {
+    name: string;
+    calories: number;
+    protein: string;
+    carbs: string;
+    fat: string;
+    description?: string;
+}
+
+export interface DayPlan {
+    day_label: string;
+    meals: {
+        breakfast: DayMeal;
+        lunch: DayMeal;
+        dinner: DayMeal;
+        snack: DayMeal;
+    };
+    total_calories: number;
+}
+
+export interface DietPlanValues {
+    days: DayPlan[];
+    target_calories_per_day?: number;
+    user_tdee?: number;
+    goal?: string;
+}
+
+export interface DietPlan {
+    id: number;
+    duration: 'daily' | 'weekly' | 'monthly';
+    status: string;
+    created_at: string;
+    plan_data: DietPlanValues;
+}
+
+export interface UserUpdate {
+    name?: string;
+    height_cm?: number;
+    weight_kg?: number;
+    age?: number;
+    activity_level?: string;
+    gender?: string;
+    target_weight_kg?: number;
 }
 
 export interface ChatResponse {
@@ -498,3 +542,41 @@ export const api = {
         return { data: await response.json() };
     },
 };
+
+
+// ============================================================================
+// Profile & Plan API Wrappers
+// ============================================================================
+
+export async function updateProfile(data: UserUpdate): Promise<User> {
+    const response = await api.patch('/users/me', data);
+    const updatedUser = response.data;
+    setStoredUser(updatedUser);
+    return updatedUser;
+}
+
+export async function generateDietPlan(duration: 'daily' | 'weekly' | 'monthly', preferences?: string): Promise<DietPlan> {
+    const response = await api.post('/plans/generate', {
+        duration,
+        dietary_preferences: preferences
+    });
+    return response.data;
+}
+
+export async function getCurrentDietPlan(): Promise<DietPlan | null> {
+    try {
+        const response = await api.get('/plans/current');
+        return response.data;
+    } catch (error) {
+        return null;
+    }
+}
+
+export async function getDietPlanHistory(): Promise<DietPlan[]> {
+    try {
+        const response = await api.get('/plans/history');
+        return response.data.plans;
+    } catch (error) {
+        return [];
+    }
+}

@@ -240,3 +240,160 @@ Keep responses concise and actionable."""
                 "recipes": [],
                 "error": f"AI Error: {str(e)}"
             }
+
+    def generate_diet_plan(
+        self,
+        user_profile: dict,
+        duration: str,
+        dietary_preferences: str = None
+    ) -> dict:
+        """
+        Generate a multi-day meal plan based on user profile and duration.
+        
+        Args:
+            user_profile: Dict with weight_kg, height_cm, target_weight_kg, tdee, bmi, activity_level
+            duration: 'daily', 'weekly', or 'monthly'
+            dietary_preferences: Optional dietary preferences (e.g., 'high-protein')
+        
+        Returns:
+            Dict with 'days' array containing meal plans for each day
+        """
+        if not self.model:
+            return {"error": "AI Service not configured", "days": []}
+        
+        # Determine number of days
+        days_count = {
+            "daily": 1,
+            "weekly": 7,
+            "monthly": 30
+        }.get(duration, 1)
+        
+        # Extract user data
+        weight = user_profile.get("weight_kg", 70)
+        height = user_profile.get("height_cm", 170)
+        target_weight = user_profile.get("target_weight_kg", weight)
+        tdee = user_profile.get("tdee", 2000)
+        bmi = user_profile.get("bmi", 22)
+        activity = user_profile.get("activity_level", "moderate")
+        age = user_profile.get("age", 30)
+        gender = user_profile.get("gender", "male")
+        
+        # Calculate calorie goal based on weight goal
+        if target_weight and target_weight < weight:
+            # Weight loss: deficit
+            daily_calories = int(tdee - 500)
+            goal = "weight loss"
+        elif target_weight and target_weight > weight:
+            # Weight gain: surplus
+            daily_calories = int(tdee + 300)
+            goal = "muscle gain"
+        else:
+            # Maintenance
+            daily_calories = int(tdee)
+            goal = "maintenance"
+        
+        preferences_str = f"\n**Dietary Preferences:** {dietary_preferences}" if dietary_preferences else ""
+        
+        prompt = f"""You are a professional dietitian creating a personalized {duration} meal plan.
+
+**User Profile:**
+- Current Weight: {weight} kg
+- Target Weight: {target_weight} kg
+- Height: {height} cm
+- Age: {age} years
+- Gender: {gender}
+- Activity Level: {activity}
+- BMI: {bmi}
+- TDEE: {tdee} kcal
+- Daily Calorie Target: {daily_calories} kcal
+- Goal: {goal}
+{preferences_str}
+
+**Create a {days_count}-day meal plan with exactly {daily_calories} calories per day.**
+
+**Requirements:**
+1. Each day must have 4 meals: breakfast, lunch, dinner, snack
+2. Calories should total approximately {daily_calories} per day
+3. Include protein, carbs, fat macros for each meal
+4. Provide variety - don't repeat the same meals every day
+5. Make recipes practical and easy to prepare
+
+**Return ONLY valid JSON in this exact format, no other text:**
+{{
+  "days": [
+    {{
+      "day_label": "Day 1",
+      "meals": {{
+        "breakfast": {{
+          "name": "Oatmeal with Berries",
+          "calories": 350,
+          "protein": "12g",
+          "carbs": "55g",
+          "fat": "8g",
+          "description": "Rolled oats with mixed berries and honey"
+        }},
+        "lunch": {{
+          "name": "Grilled Chicken Salad",
+          "calories": 450,
+          "protein": "35g",
+          "carbs": "25g",
+          "fat": "20g",
+          "description": "Mixed greens with grilled chicken breast"
+        }},
+        "dinner": {{
+          "name": "Salmon with Vegetables",
+          "calories": 550,
+          "protein": "40g",
+          "carbs": "30g",
+          "fat": "25g",
+          "description": "Baked salmon with roasted vegetables"
+        }},
+        "snack": {{
+          "name": "Greek Yogurt",
+          "calories": 150,
+          "protein": "15g",
+          "carbs": "12g",
+          "fat": "5g",
+          "description": "Plain Greek yogurt with nuts"
+        }}
+      }},
+      "total_calories": {daily_calories}
+    }}
+  ],
+  "target_calories_per_day": {daily_calories},
+  "user_tdee": {tdee},
+  "goal": "{goal}"
+}}
+
+Generate {days_count} days with this exact structure. Each day should have different meals for variety."""
+
+        try:
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response - remove markdown code blocks if present
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                response_text = "\n".join(lines)
+            
+            # Parse JSON response
+            result = json.loads(response_text)
+            
+            return result
+            
+        except json.JSONDecodeError as e:
+            return {
+                "days": [],
+                "error": f"Failed to parse AI response: {str(e)}",
+                "raw_response": response_text if 'response_text' in locals() else None
+            }
+        except Exception as e:
+            return {
+                "days": [],
+                "error": f"AI Error: {str(e)}"
+            }
+

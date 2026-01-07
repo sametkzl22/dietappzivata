@@ -6,6 +6,7 @@ These schemas handle request/response validation and serialization.
 
 from typing import Optional, List
 from enum import Enum
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
@@ -71,6 +72,7 @@ class UserUpdate(BaseModel):
     waist_cm: Optional[float] = Field(None, gt=0)
     neck_cm: Optional[float] = Field(None, gt=0)
     hip_cm: Optional[float] = Field(None, gt=0)
+    target_weight_kg: Optional[float] = Field(None, gt=0, description="Target weight goal")
 
 
 class UserResponse(UserBase):
@@ -78,6 +80,7 @@ class UserResponse(UserBase):
     id: int
     is_active: bool = True
     is_superuser: bool = False
+    target_weight_kg: Optional[float] = None
 
     class Config:
         from_attributes = True
@@ -304,3 +307,62 @@ class SuggestRecipeRequest(BaseModel):
     ingredients: List[str] = Field(..., min_length=1, description="List of available ingredients")
     dietary_preferences: Optional[str] = Field(None, description="e.g., 'vegetarian', 'low-carb', 'high-protein'")
     meal_type: Optional[MealType] = Field(None, description="Preferred meal type")
+
+
+# ============================================================================
+# Diet Plan Schemas (Long-Term Planning)
+# ============================================================================
+
+class PlanDuration(str, Enum):
+    """Duration options for meal plans."""
+    daily = "daily"
+    weekly = "weekly"
+    monthly = "monthly"
+
+
+class PlanGenerateRequest(BaseModel):
+    """Request to generate a new meal plan."""
+    duration: PlanDuration = Field(..., description="Plan duration: daily, weekly, or monthly")
+    dietary_preferences: Optional[str] = Field(None, description="Optional dietary preferences")
+
+
+class DayMeal(BaseModel):
+    """A single meal in a day."""
+    name: str
+    calories: int
+    protein: str
+    carbs: str
+    fat: str
+    description: Optional[str] = None
+
+
+class DayPlan(BaseModel):
+    """A single day's meal plan."""
+    day_label: str = Field(..., description="e.g., 'Day 1', 'Monday'")
+    meals: dict = Field(..., description="Meals by type: breakfast, lunch, dinner, snack")
+    total_calories: int
+
+
+class DietPlanData(BaseModel):
+    """The structured plan data stored in the database."""
+    days: List[DayPlan]
+    target_calories_per_day: Optional[int] = None
+    user_tdee: Optional[float] = None
+
+
+class DietPlanResponse(BaseModel):
+    """Response containing a diet plan."""
+    id: int
+    duration: str
+    status: str
+    created_at: datetime
+    plan_data: dict
+
+    class Config:
+        from_attributes = True
+
+
+class DietPlanListResponse(BaseModel):
+    """Response containing a list of diet plans."""
+    plans: List[DietPlanResponse]
+

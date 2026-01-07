@@ -2,10 +2,10 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser, isAuthenticated, api, User } from '@/lib/api';
+import { getStoredUser, isAuthenticated, updateProfile, api, User, setStoredUser, type UserUpdate } from '@/lib/api';
 import {
     User as UserIcon, Mail, Ruler, Weight, Activity, Target,
-    Calendar, ArrowLeft, Edit2, Save, X, Crown, Sparkles
+    Calendar, ArrowLeft, Edit2, Save, X, Crown, Sparkles, TrendingUp
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -15,12 +15,15 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [formData, setFormData] = useState({
+
+    // Form data matches UserUpdate interface
+    const [formData, setFormData] = useState<UserUpdate>({
         name: '',
-        height: 0,
-        weight: 0,
+        height_cm: 0,
+        weight_kg: 0,
         age: 0,
         activity_level: 'moderate',
+        target_weight_kg: 0
     });
 
     useEffect(() => {
@@ -37,11 +40,14 @@ export default function ProfilePage() {
             setUser(response.data);
             setFormData({
                 name: response.data.name || '',
-                height: response.data.height || 0,
-                weight: response.data.weight || 0,
+                height_cm: response.data.height_cm || 0,
+                weight_kg: response.data.weight_kg || 0,
                 age: response.data.age || 0,
                 activity_level: response.data.activity_level || 'moderate',
+                target_weight_kg: response.data.target_weight_kg || response.data.weight_kg || 0
             });
+            // Update local storage too
+            setStoredUser(response.data);
         } catch (error) {
             console.error('Failed to fetch user data:', error);
             const storedUser = getStoredUser();
@@ -49,10 +55,11 @@ export default function ProfilePage() {
                 setUser(storedUser);
                 setFormData({
                     name: storedUser.name || '',
-                    height: storedUser.height || 0,
-                    weight: storedUser.weight || 0,
+                    height_cm: storedUser.height_cm || 0,
+                    weight_kg: storedUser.weight_kg || 0,
                     age: storedUser.age || 0,
                     activity_level: storedUser.activity_level || 'moderate',
+                    target_weight_kg: (storedUser as any).target_weight_kg || storedUser.weight_kg || 0
                 });
             }
         } finally {
@@ -63,9 +70,8 @@ export default function ProfilePage() {
     const handleSave = async () => {
         setSaving(true);
         try {
-            const response = await api.put('/users/me', formData);
-            setUser(response.data);
-            localStorage.setItem('user', JSON.stringify(response.data));
+            const updatedUser = await updateProfile(formData);
+            setUser(updatedUser);
             setEditing(false);
         } catch (error) {
             console.error('Failed to update profile:', error);
@@ -76,9 +82,9 @@ export default function ProfilePage() {
     };
 
     const calculateBMI = () => {
-        if (!user?.height || !user?.weight) return null;
-        const heightInMeters = user.height / 100;
-        return (user.weight / (heightInMeters * heightInMeters)).toFixed(1);
+        if (!user?.height_cm || !user?.weight_kg) return null;
+        const heightInMeters = user.height_cm / 100;
+        return (user.weight_kg / (heightInMeters * heightInMeters)).toFixed(1);
     };
 
     const getBMICategory = (bmi: number) => {
@@ -91,11 +97,16 @@ export default function ProfilePage() {
     const getActivityLabel = (level: string) => {
         const labels: Record<string, string> = {
             sedentary: 'Sedentary (little or no exercise)',
-            lightly_active: 'Lightly Active (1-3 days/week)',
+            light: 'Lightly Active (1-3 days/week)',
             moderate: 'Moderately Active (3-5 days/week)',
-            very_active: 'Very Active (6-7 days/week)',
-            extremely_active: 'Extremely Active (physical job)',
+            very: 'Very Active (6-7 days/week)',
+            athlete: 'Athlete / Extremely Active',
         };
+        // Normalize backend/frontend enum mismatch if any
+        if (level === 'lightly_active') return labels.light;
+        if (level === 'very_active') return labels.very;
+        if (level === 'extremely_active') return labels.athlete;
+
         return labels[level] || level;
     };
 
@@ -137,7 +148,10 @@ export default function ProfilePage() {
                     ) : (
                         <div className="flex gap-2">
                             <button
-                                onClick={() => setEditing(false)}
+                                onClick={() => {
+                                    setEditing(false);
+                                    fetchUserData(); // Reset form
+                                }}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-all"
                             >
                                 <X className="h-4 w-4" />
@@ -166,8 +180,8 @@ export default function ProfilePage() {
                     <div className="relative px-6">
                         <div className="absolute -top-16 left-6">
                             <div className={`w-32 h-32 rounded-2xl flex items-center justify-center text-white text-4xl font-bold shadow-xl border-4 border-white ${user.is_superuser
-                                    ? 'bg-gradient-to-br from-amber-400 to-orange-500'
-                                    : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                                ? 'bg-gradient-to-br from-amber-400 to-orange-500'
+                                : 'bg-gradient-to-br from-emerald-400 to-teal-500'
                                 }`}>
                                 {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
                             </div>
@@ -185,7 +199,7 @@ export default function ProfilePage() {
                             {editing ? (
                                 <input
                                     type="text"
-                                    value={formData.name}
+                                    value={formData.name || ''}
                                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                     className="text-2xl font-bold text-slate-900 border border-slate-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                                     placeholder="Your name"
@@ -207,8 +221,51 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                {/* Main Stats Grid */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                    {/* Weight */}
+                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                                <Weight className="h-5 w-5 text-purple-600" />
+                            </div>
+                            <span className="text-sm text-slate-500">Current Weight</span>
+                        </div>
+                        {editing ? (
+                            <input
+                                type="number"
+                                value={formData.weight_kg}
+                                onChange={(e) => setFormData({ ...formData, weight_kg: parseFloat(e.target.value) || 0 })}
+                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                        ) : (
+                            <p className="text-2xl font-bold text-slate-900">{user.weight_kg} <span className="text-sm font-normal text-slate-500">kg</span></p>
+                        )}
+                    </div>
+
+                    {/* Target Weight */}
+                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                <TrendingUp className="h-5 w-5 text-indigo-600" />
+                            </div>
+                            <span className="text-sm text-slate-500">Target Weight</span>
+                        </div>
+                        {editing ? (
+                            <input
+                                type="number"
+                                value={formData.target_weight_kg || formData.weight_kg}
+                                onChange={(e) => setFormData({ ...formData, target_weight_kg: parseFloat(e.target.value) || 0 })}
+                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            />
+                        ) : (
+                            <p className="text-2xl font-bold text-slate-900">
+                                {(user as any).target_weight_kg || user.weight_kg}
+                                <span className="text-sm font-normal text-slate-500"> kg</span>
+                            </p>
+                        )}
+                    </div>
+
                     {/* Height */}
                     <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
                         <div className="flex items-center gap-3 mb-2">
@@ -220,52 +277,12 @@ export default function ProfilePage() {
                         {editing ? (
                             <input
                                 type="number"
-                                value={formData.height}
-                                onChange={(e) => setFormData({ ...formData, height: parseInt(e.target.value) || 0 })}
+                                value={formData.height_cm}
+                                onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || 0 })}
                                 className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                             />
                         ) : (
-                            <p className="text-2xl font-bold text-slate-900">{user.height || '-'} <span className="text-sm font-normal text-slate-500">cm</span></p>
-                        )}
-                    </div>
-
-                    {/* Weight */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                                <Weight className="h-5 w-5 text-purple-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">Weight</span>
-                        </div>
-                        {editing ? (
-                            <input
-                                type="number"
-                                value={formData.weight}
-                                onChange={(e) => setFormData({ ...formData, weight: parseInt(e.target.value) || 0 })}
-                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                        ) : (
-                            <p className="text-2xl font-bold text-slate-900">{user.weight || '-'} <span className="text-sm font-normal text-slate-500">kg</span></p>
-                        )}
-                    </div>
-
-                    {/* Age */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center">
-                                <Calendar className="h-5 w-5 text-rose-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">Age</span>
-                        </div>
-                        {editing ? (
-                            <input
-                                type="number"
-                                value={formData.age}
-                                onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
-                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                        ) : (
-                            <p className="text-2xl font-bold text-slate-900">{user.age || '-'} <span className="text-sm font-normal text-slate-500">years</span></p>
+                            <p className="text-2xl font-bold text-slate-900">{user.height_cm} <span className="text-sm font-normal text-slate-500">cm</span></p>
                         )}
                     </div>
 
@@ -284,29 +301,64 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* Activity Level */}
-                <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100 mt-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                            <Activity className="h-5 w-5 text-orange-600" />
+                {/* Additional Details Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                    {/* Activity Level */}
+                    <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                                <Activity className="h-5 w-5 text-orange-600" />
+                            </div>
+                            <h3 className="font-semibold text-slate-900">Activity Level</h3>
                         </div>
-                        <h3 className="font-semibold text-slate-900">Activity Level</h3>
+                        {editing ? (
+                            <select
+                                value={formData.activity_level}
+                                onChange={(e) => setFormData({ ...formData, activity_level: e.target.value })}
+                                className="w-full border border-slate-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            >
+                                <option value="sedentary">Sedentary (little or no exercise)</option>
+                                <option value="light">Lightly Active (1-3 days/week)</option>
+                                <option value="moderate">Moderately Active (3-5 days/week)</option>
+                                <option value="very">Very Active (6-7 days/week)</option>
+                                <option value="athlete">Athlete / Extremely Active</option>
+                            </select>
+                        ) : (
+                            <div>
+                                <p className="text-lg font-medium text-slate-900">{getActivityLabel(user.activity_level)}</p>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Base for TDEE calculation
+                                </p>
+                            </div>
+                        )}
                     </div>
-                    {editing ? (
-                        <select
-                            value={formData.activity_level}
-                            onChange={(e) => setFormData({ ...formData, activity_level: e.target.value })}
-                            className="w-full border border-slate-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        >
-                            <option value="sedentary">Sedentary (little or no exercise)</option>
-                            <option value="lightly_active">Lightly Active (1-3 days/week)</option>
-                            <option value="moderate">Moderately Active (3-5 days/week)</option>
-                            <option value="very_active">Very Active (6-7 days/week)</option>
-                            <option value="extremely_active">Extremely Active (physical job)</option>
-                        </select>
-                    ) : (
-                        <p className="text-slate-700">{getActivityLabel(user.activity_level || 'moderate')}</p>
-                    )}
+
+                    {/* Age and Other Details */}
+                    <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center">
+                                <Calendar className="h-5 w-5 text-rose-600" />
+                            </div>
+                            <h3 className="font-semibold text-slate-900">Personal Details</h3>
+                        </div>
+                        <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                            <span className="text-slate-500">Age</span>
+                            {editing ? (
+                                <input
+                                    type="number"
+                                    value={formData.age}
+                                    onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
+                                    className="text-right font-medium text-slate-900 border border-slate-200 rounded px-2 w-20"
+                                />
+                            ) : (
+                                <span className="font-medium text-slate-900">{user.age} years</span>
+                            )}
+                        </div>
+                        <div className="flex items-center justify-between py-2">
+                            <span className="text-slate-500">Gender</span>
+                            <span className="font-medium text-slate-900 capitalize">{user.gender}</span>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Quick Actions */}

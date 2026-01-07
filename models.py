@@ -7,7 +7,8 @@ with health calculation methods (BMI, Body Fat %, TDEE).
 
 import math
 import enum
-from sqlalchemy import Column, Integer, Float, String, Boolean, Enum, ForeignKey
+from datetime import datetime
+from sqlalchemy import Column, Integer, Float, String, Boolean, Enum, ForeignKey, DateTime, JSON
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -61,9 +62,13 @@ class User(Base):
     waist_cm = Column(Float, nullable=False)
     neck_cm = Column(Float, nullable=False)
     hip_cm = Column(Float, nullable=True)  # Required for females
+    
+    # Goal tracking
+    target_weight_kg = Column(Float, nullable=True)
 
     # Relationships
     pantry_items = relationship("Pantry", back_populates="user")
+    diet_plans = relationship("DietPlan", back_populates="user", order_by="desc(DietPlan.created_at)")
 
     def calculate_bmi(self) -> float:
         """
@@ -247,3 +252,24 @@ class Pantry(Base):
     # Relationships
     user = relationship("User", back_populates="pantry_items")
     ingredient = relationship("Ingredient", back_populates="pantry_entries")
+
+
+class DietPlan(Base):
+    """
+    Persistent meal plan storage for daily, weekly, or monthly plans.
+    Stores the full AI-generated plan as JSON for later retrieval.
+    """
+    __tablename__ = "diet_plans"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    duration = Column(String, nullable=False)  # 'daily', 'weekly', 'monthly'
+    status = Column(String, default="active")  # 'active', 'archived'
+    
+    # Stores the full AI JSON output
+    # Format: { "days": [ { "day_label": "Day 1", "meals": {...}, "total_calories": 1800 }, ... ] }
+    plan_data = Column(JSON, nullable=False)
+    
+    # Relationships
+    user = relationship("User", back_populates="diet_plans")

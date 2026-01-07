@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import get_db, init_db
-from models import User, Recipe, Ingredient, Pantry, RecipeIngredient, ActivityLevel, MealType
+from models import User, Recipe, Ingredient, Pantry, RecipeIngredient, ActivityLevel, MealType, DietPlan
 from schemas import (
     UserCreate, UserUpdate, UserResponse, UserLogin, HealthMetrics,
     Token,
@@ -35,7 +35,8 @@ from schemas import (
     PantryItemCreate, PantryItemResponse, PantryUpdate,
     MealPlanRequest, MealPlanResponse, MealSlot,
     ChatRequest, ChatResponse,
-    SuggestRecipeRequest, AIRecipeResponse
+    SuggestRecipeRequest, AIRecipeResponse,
+    PlanGenerateRequest, DietPlanResponse, DietPlanListResponse
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
@@ -214,6 +215,41 @@ def get_current_user_health(current_user: User = Depends(get_current_user)):
         return HealthMetrics(user_id=current_user.id, **metrics)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.patch(
+    "/users/me",
+    response_model=UserResponse,
+    tags=["Authentication"],
+    summary="Update current user profile"
+)
+def update_current_user_profile(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the profile of the currently authenticated user.
+    
+    Updatable fields include:
+    - name, height_cm, weight_kg, age
+    - activity_level, waist_cm, neck_cm, hip_cm
+    - target_weight_kg (weight goal)
+    """
+    update_data = user_update.model_dump(exclude_unset=True)
+    
+    # Don't allow email change through this endpoint
+    if "email" in update_data:
+        del update_data["email"]
+    
+    for field, value in update_data.items():
+        if hasattr(current_user, field):
+            setattr(current_user, field, value)
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return current_user
 
 
 # ============================================================================
@@ -1027,6 +1063,139 @@ def suggest_recipes(
 
 
 # ============================================================================
+    return AIRecipeResponse(
+        recipes=result.get("recipes", []),
+        user_tdee=result.get("user_tdee"),
+        user_goal=result.get("user_goal")
+    )
+
+
+# ============================================================================
+# Long-Term Meal Plan Endpoints
+# ============================================================================
+
+@app.post(
+    "/plans/generate",
+    response_model=DietPlanResponse,
+    tags=["Start"],
+    summary="Generate a new personalized meal plan (daily/weekly/monthly)"
+)
+def generate_message_plan(
+    request: PlanGenerateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a new persistent meal plan using AI.
+    
+    - Archives any existing 'active' plans
+    - Creates a new plan based on user profile and goals
+    - Returns structured plan data
+    """
+    # 1. Get user profile data
+    try:
+        health_metrics = current_user.get_health_metrics()
+    except ValueError:
+        # Fallback if metrics missing
+        health_metrics = {
+            "bmi": 22.0, "tdee": 2000, "body_fat_percent": 20, "bmr": 1600
+        }
+        
+    user_profile = {
+        "weight_kg": current_user.weight_kg,
+        "height_cm": current_user.height_cm,
+        "target_weight_kg": current_user.target_weight_kg,
+        "age": current_user.age,
+        "gender": current_user.gender,
+        "activity_level": current_user.activity_level.value,
+        **health_metrics
+    }
+    
+    # 2. Call AI Service
+    plan_result = ai_coach.generate_diet_plan(
+        user_profile=user_profile,
+        duration=request.duration.value,
+        dietary_preferences=request.dietary_preferences
+    )
+    
+    if "error" in plan_result:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plan generation failed: {plan_result['error']}"
+        )
+        
+    if not plan_result.get("days"):
+        raise HTTPException(
+            status_code=500,
+            detail="AI returned empty plan data"
+        )
+    
+    # 3. Archive existing active plans
+    existing_plans = db.query(DietPlan).filter(
+        DietPlan.user_id == current_user.id,
+        DietPlan.status == "active"
+    ).all()
+    
+    for plan in existing_plans:
+        plan.status = "archived"
+    
+    # 4. Create new plan
+    new_plan = DietPlan(
+        user_id=current_user.id,
+        duration=request.duration.value,
+        status="active",
+        plan_data=plan_result
+    )
+    
+    db.add(new_plan)
+    db.commit()
+    db.refresh(new_plan)
+    
+    return new_plan
+
+
+@app.get(
+    "/plans/current",
+    response_model=DietPlanResponse,
+    tags=["Start"],
+    summary="Get user's current active meal plan"
+)
+def get_current_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Fetch the most recent 'active' meal plan for the user."""
+    plan = db.query(DietPlan).filter(
+        DietPlan.user_id == current_user.id,
+        DietPlan.status == "active"
+    ).order_by(DietPlan.created_at.desc()).first()
+    
+    if not plan:
+        raise HTTPException(status_code=404, detail="No active plan found")
+        
+    return plan
+
+
+@app.get(
+    "/plans/history",
+    response_model=DietPlanListResponse,
+    tags=["Start"],
+    summary="Get user's plan history"
+)
+def get_plan_history(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all meal plans (active and archived) for the user."""
+    plans = db.query(DietPlan).filter(
+        DietPlan.user_id == current_user.id
+    ).order_by(DietPlan.created_at.desc()).offset(skip).limit(limit).all()
+    
+    return {"plans": plans}
+
+
 # Health Check
 # ============================================================================
 

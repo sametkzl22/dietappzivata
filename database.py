@@ -29,7 +29,7 @@ def init_db():
     Initialize the database by creating all tables.
     Call this on application startup.
     """
-    from models import User, Recipe, Ingredient, Pantry, RecipeIngredient
+    from models import User, Recipe, Ingredient, Pantry, RecipeIngredient, DietPlan
     Base.metadata.create_all(bind=engine)
 
 
