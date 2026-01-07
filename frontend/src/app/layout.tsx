@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NutriPlan - Your AI-Powered Personal Dietitian",
+  title: "Zivata - Your AI-Powered Personal Dietitian",
   description: "Get personalized meal plans based on your body metrics, pantry ingredients, and health goals. Powered by Google Gemini AI.",
   keywords: ["diet", "nutrition", "meal planning", "AI", "health", "fitness", "calorie tracking"],
 };
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth">
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning={true}

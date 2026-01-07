@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { getStoredUser, logout, isAuthenticated, User } from '@/lib/api';
 import {
     Menu, X, Home, LayoutDashboard, ChefHat, User as UserIcon,
-    Shield, LogIn, UserPlus, LogOut, ChevronDown, Sparkles
+    Shield, LogIn, UserPlus, LogOut, ChevronDown, Sparkles, Moon, Sun
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -15,6 +15,7 @@ export default function Navbar() {
     const [user, setUser] = useState<User | null>(null);
     const [dropdownOpen, setDropdownOpen] = useState(false);
     const [scrolled, setScrolled] = useState(false);
+    const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
     useEffect(() => {
         // Check authentication on mount and pathname change
@@ -33,6 +34,30 @@ export default function Navbar() {
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
+
+    // Theme Logic
+    useEffect(() => {
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme === 'dark' || (!storedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            setTheme('dark');
+            document.documentElement.classList.add('dark');
+        } else {
+            setTheme('light');
+            document.documentElement.classList.remove('dark');
+        }
+    }, []);
+
+    const toggleTheme = () => {
+        if (theme === 'light') {
+            setTheme('dark');
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            setTheme('light');
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+        }
+    };
 
     const handleLogout = () => {
         logout();
@@ -68,8 +93,8 @@ export default function Navbar() {
 
     return (
         <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
-            ? 'bg-white/95 backdrop-blur-xl shadow-lg shadow-slate-200/50 border-b border-slate-100'
-            : 'bg-white/80 backdrop-blur-md'
+            ? 'bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-lg shadow-slate-200/50 dark:shadow-slate-900/50 border-b border-slate-100 dark:border-slate-800'
+            : 'bg-white/80 dark:bg-slate-900/80 backdrop-blur-md'
             }`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
@@ -79,7 +104,7 @@ export default function Navbar() {
                             <span className="text-xl">🥗</span>
                         </div>
                         <span className="text-xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                            NutriPlan
+                            Zivata
                         </span>
                     </Link>
 
@@ -90,8 +115,8 @@ export default function Navbar() {
                                 key={link.href + link.label}
                                 href={link.href}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${pathname === link.href
-                                    ? 'bg-emerald-50 text-emerald-600'
-                                    : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                                    : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
                                     }`}
                             >
                                 <link.icon className="h-4 w-4" />
@@ -101,7 +126,7 @@ export default function Navbar() {
                         {user?.is_superuser && (
                             <Link
                                 href={adminLink.href}
-                                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-amber-600 hover:bg-amber-50 transition-all"
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
                             >
                                 <adminLink.icon className="h-4 w-4" />
                                 {adminLink.label}
@@ -111,21 +136,24 @@ export default function Navbar() {
 
                     {/* Auth Section */}
                     <div className="hidden md:flex items-center gap-3">
+                        {/* Theme Toggle */}
+                        <button
+                            onClick={toggleTheme}
+                            className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            aria-label="Toggle Theme"
+                        >
+                            {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+                        </button>
+
                         {user ? (
                             <div className="relative">
                                 <button
                                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                                    className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-all"
+                                    className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all"
                                 >
-                                    {/* <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md ${user.is_superuser
-                                        ? 'bg-gradient-to-br from-amber-400 to-orange-500'
-                                        : 'bg-gradient-to-br from-emerald-400 to-teal-500'
-                                        }`}>
-                                      {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
-                                    </div> */}
                                     <div className="text-left hidden lg:block">
-                                        <p className="text-sm font-medium text-slate-900">{user.name || 'User'}</p>
-                                        <p className="text-xs text-slate-500">{user.is_superuser ? 'Admin' : 'Member'}</p>
+                                        <p className="text-sm font-medium text-slate-900 dark:text-slate-200">{user.name || 'User'}</p>
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">{user.is_superuser ? 'Admin' : 'Member'}</p>
                                     </div>
                                     <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
                                 </button>
@@ -137,16 +165,16 @@ export default function Navbar() {
                                             className="fixed inset-0 z-40"
                                             onClick={() => setDropdownOpen(false)}
                                         />
-                                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-50">
-                                            <div className="p-3 border-b border-slate-100 bg-slate-50">
-                                                <p className="text-sm font-medium text-slate-900">{user.name}</p>
-                                                <p className="text-xs text-slate-500 truncate">{user.email}</p>
+                                        <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 overflow-hidden z-50">
+                                            <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                                                <p className="text-sm font-medium text-slate-900 dark:text-slate-200">{user.name}</p>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{user.email}</p>
                                             </div>
                                             <div className="p-2">
                                                 <Link
                                                     href="/dashboard"
                                                     onClick={() => setDropdownOpen(false)}
-                                                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                                                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
                                                 >
                                                     <LayoutDashboard className="h-4 w-4" />
                                                     Dashboard
@@ -154,7 +182,7 @@ export default function Navbar() {
                                                 <Link
                                                     href="/onboarding"
                                                     onClick={() => setDropdownOpen(false)}
-                                                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 hover:bg-emerald-50 hover:text-emerald-600 transition-all"
+                                                    className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all"
                                                 >
                                                     <UserIcon className="h-4 w-4" />
                                                     Edit Profile
@@ -163,17 +191,17 @@ export default function Navbar() {
                                                     <Link
                                                         href="/admin"
                                                         onClick={() => setDropdownOpen(false)}
-                                                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-amber-600 hover:bg-amber-50 transition-all"
+                                                        className="flex items-center gap-3 px-3 py-2 rounded-lg text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all"
                                                     >
                                                         <Shield className="h-4 w-4" />
                                                         Admin Panel
                                                     </Link>
                                                 )}
                                             </div>
-                                            <div className="p-2 border-t border-slate-100">
+                                            <div className="p-2 border-t border-slate-100 dark:border-slate-800">
                                                 <button
                                                     onClick={handleLogout}
-                                                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-600 hover:bg-red-50 transition-all"
+                                                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                                 >
                                                     <LogOut className="h-4 w-4" />
                                                     Logout
@@ -187,7 +215,7 @@ export default function Navbar() {
                             <>
                                 <Link
                                     href="/login"
-                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 font-medium transition-all"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 font-medium transition-all"
                                 >
                                     <LogIn className="h-4 w-4" />
                                     Login
@@ -203,19 +231,28 @@ export default function Navbar() {
                         )}
                     </div>
 
-                    {/* Mobile Menu Button */}
-                    <button
-                        onClick={() => setIsOpen(!isOpen)}
-                        className="md:hidden p-2 rounded-lg text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
-                    >
-                        {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-                    </button>
+                    {/* Mobile Menu Button + Theme Toggle */}
+                    <div className="flex items-center gap-2 md:hidden">
+                        <button
+                            onClick={toggleTheme}
+                            className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        >
+                            {theme === 'light' ? <Moon className="h-6 w-6" /> : <Sun className="h-6 w-6" />}
+                        </button>
+
+                        <button
+                            onClick={() => setIsOpen(!isOpen)}
+                            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
+                        >
+                            {isOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+                        </button>
+                    </div>
                 </div>
             </div>
 
             {/* Mobile Menu */}
             {isOpen && (
-                <div className="md:hidden bg-white border-t border-slate-100 shadow-xl">
+                <div className="md:hidden bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 shadow-xl">
                     <div className="px-4 py-4 space-y-2">
                         {navLinks.map(link => (
                             <Link
@@ -223,8 +260,8 @@ export default function Navbar() {
                                 href={link.href}
                                 onClick={() => setIsOpen(false)}
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${pathname === link.href
-                                    ? 'bg-emerald-50 text-emerald-600'
-                                    : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400'
+                                    : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
                                     }`}
                             >
                                 <link.icon className="h-5 w-5" />
@@ -235,14 +272,14 @@ export default function Navbar() {
                             <Link
                                 href="/admin"
                                 onClick={() => setIsOpen(false)}
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl text-amber-600 hover:bg-amber-50 font-medium transition-all"
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20 font-medium transition-all"
                             >
                                 <Shield className="h-5 w-5" />
                                 Admin Panel
                             </Link>
                         )}
 
-                        <div className="pt-4 border-t border-slate-100 space-y-2">
+                        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
                             {user ? (
                                 <>
                                     <div className="flex items-center gap-3 px-4 py-3">
@@ -253,13 +290,13 @@ export default function Navbar() {
                                             {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
                                         </div>
                                         <div>
-                                            <p className="text-sm font-medium text-slate-900">{user.name || 'User'}</p>
-                                            <p className="text-xs text-slate-500">{user.email}</p>
+                                            <p className="text-sm font-medium text-slate-900 dark:text-slate-200">{user.name || 'User'}</p>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400">{user.email}</p>
                                         </div>
                                     </div>
                                     <button
                                         onClick={handleLogout}
-                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all"
+                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
                                     >
                                         <LogOut className="h-5 w-5" />
                                         Logout
@@ -270,7 +307,7 @@ export default function Navbar() {
                                     <Link
                                         href="/login"
                                         onClick={() => setIsOpen(false)}
-                                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-all"
+                                        className="flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-300 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
                                     >
                                         <LogIn className="h-5 w-5" />
                                         Login
