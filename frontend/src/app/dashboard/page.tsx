@@ -13,7 +13,8 @@ import {
     ChevronRight,
     Utensils,
     ShoppingBag,
-    X
+    X,
+    Trash2
 } from 'lucide-react';
 import StatsCard from '@/components/StatsCard';
 import MealCard, { MealCardSkeleton } from '@/components/MealCard';
@@ -27,8 +28,10 @@ import {
     type User,
     type HealthMetrics,
     type DietPlan,
-    type DayPlan
+    type DayPlan,
+    deleteCurrentPlan
 } from '@/lib/api';
+import * as api from '@/lib/api'; // Import all as api to use api.generateDietPlan and api.deleteCurrentPlan
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -42,6 +45,15 @@ export default function DashboardPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
     const [showShoppingList, setShowShoppingList] = useState(false);
+
+    // Tag Input State
+    const [excludedItems, setExcludedItems] = useState<string[]>([]);
+    const [ingredientInput, setIngredientInput] = useState("");
+
+    const [includedItems, setIncludedItems] = useState<string[]>([]);
+    const [includedInput, setIncludedInput] = useState("");
+
+    const [isResetting, setIsResetting] = useState(false);
 
     // Fetch initial data
     useEffect(() => {
@@ -95,14 +107,56 @@ export default function DashboardPage() {
     const handleGeneratePlan = async () => {
         setIsGenerating(true);
         try {
-            const newPlan = await generateDietPlan(planDuration, dietaryPreference);
+            // Use the array state directly
+            const newPlan = await api.generateDietPlan(
+                planDuration,
+                dietaryPreference === 'Standard' ? undefined : dietaryPreference,
+                excludedItems,
+                includedItems
+            );
             setCurrentPlan(newPlan);
             setSelectedDayIndex(0);
-        } catch (err) {
-            console.error('Failed to generate plan:', err);
-            alert('Failed to generate plan. Please try again.');
+        } catch (error) {
+            console.error(error);
+            alert('Failed to generate plan');
         } finally {
             setIsGenerating(false);
+        }
+    };
+
+    const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>, list: string[], setList: (l: string[]) => void, inputVal: string, setInputVal: (s: string) => void) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            const val = inputVal.trim();
+            if (val && !list.includes(val)) {
+                setList([...list, val]);
+                setInputVal("");
+            }
+        }
+    };
+
+    const removeTag = (tagToRemove: string, list: string[], setList: (l: string[]) => void) => {
+        setList(list.filter(tag => tag !== tagToRemove));
+    };
+
+    const handleResetPlan = async (e: React.MouseEvent) => {
+        e.preventDefault();
+
+        if (!window.confirm("Are you sure you want to delete your current plan? This action cannot be undone.")) return;
+
+        setIsResetting(true);
+        try {
+            await api.deleteCurrentPlan();
+            setCurrentPlan(null);
+            setExcludedItems([]);
+            setIngredientInput("");
+            setIncludedItems([]);
+            setIncludedInput("");
+        } catch (error) {
+            console.error("Failed to delete plan", error);
+            alert("Failed to reset plan");
+        } finally {
+            setIsResetting(false);
         }
     };
 
@@ -210,11 +264,14 @@ export default function DashboardPage() {
 
                 {/* Meal Plan Controls */}
                 <section className="mb-6 flex flex-col xl:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                    <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
-                        <div className="flex items-center gap-2">
+                    <div className="flex flex-col xl:flex-row gap-4 xl:items-center justify-between w-full">
+                        <div className="flex items-center gap-2 min-w-fit">
                             <Utensils className="h-5 w-5 text-emerald-600" />
-                            <span className="font-semibold text-slate-700 whitespace-nowrap">Duration:</span>
-                            <div className="flex bg-slate-100 rounded-lg p-1">
+                            <h2 className="text-xl font-bold text-slate-900">Meal Plan</h2>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center w-full">
+                            <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg whitespace-nowrap">
                                 {(['daily', 'weekly', 'monthly'] as const).map((d) => (
                                     <button
                                         key={d}
@@ -228,45 +285,98 @@ export default function DashboardPage() {
                                     </button>
                                 ))}
                             </div>
+
+                            <div className="flex flex-col sm:flex-row gap-4 w-full">
+                                <div className="flex items-center gap-2">
+                                    <span className="font-semibold text-slate-700 whitespace-nowrap text-sm">Pref:</span>
+                                    <select
+                                        value={dietaryPreference}
+                                        onChange={(e) => setDietaryPreference(e.target.value)}
+                                        className="block w-full sm:w-32 rounded-lg border-slate-200 py-1.5 text-sm focus:border-emerald-500 focus:ring-emerald-500 bg-slate-50"
+                                    >
+                                        <option value="Standard">None</option>
+                                        <option value="Vegan">Vegan</option>
+                                        <option value="Vegetarian">Vegetarian</option>
+                                        <option value="Keto">Keto</option>
+                                        <option value="Paleo">Paleo</option>
+                                        <option value="Gluten-Free">Gluten-Free</option>
+                                        <option value="High Protein">High Protein</option>
+                                        <option value="Mediterranean">Mediterranean</option>
+                                    </select>
+                                </div>
+
+                                <div className="flex flex-col gap-2 w-full">
+                                    {/* Included Ingredients */}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold text-slate-700 whitespace-nowrap text-sm">✅ Incl:</span>
+                                        <input
+                                            type="text"
+                                            value={includedInput}
+                                            onChange={(e) => setIncludedInput(e.target.value)}
+                                            onKeyDown={(e) => handleAddTag(e, includedItems, setIncludedItems, includedInput, setIncludedInput)}
+                                            placeholder="Available..."
+                                            className="block w-full sm:w-32 rounded-lg border-emerald-200 py-1.5 text-sm focus:border-emerald-500 focus:ring-emerald-500 bg-emerald-50/30"
+                                        />
+                                        {includedItems.map(tag => (
+                                            <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                {tag}
+                                                <button onClick={() => removeTag(tag, includedItems, setIncludedItems)} className="hover:text-emerald-900"><X className="h-3 w-3" /></button>
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Excluded Ingredients */}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold text-slate-700 whitespace-nowrap text-sm">⛔ Excl:</span>
+                                        <input
+                                            type="text"
+                                            value={ingredientInput}
+                                            onChange={(e) => setIngredientInput(e.target.value)}
+                                            onKeyDown={(e) => handleAddTag(e, excludedItems, setExcludedItems, ingredientInput, setIngredientInput)}
+                                            placeholder="Allergic..."
+                                            className="block w-full sm:w-32 rounded-lg border-red-200 py-1.5 text-sm focus:border-red-500 focus:ring-red-500 bg-red-50/30"
+                                        />
+                                        {excludedItems.map(tag => (
+                                            <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                                                {tag}
+                                                <button onClick={() => removeTag(tag, excludedItems, setExcludedItems)} className="hover:text-red-900"><X className="h-3 w-3" /></button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <span className="font-semibold text-slate-700 whitespace-nowrap">Preference:</span>
-                            <select
-                                value={dietaryPreference}
-                                onChange={(e) => setDietaryPreference(e.target.value)}
-                                className="block w-full sm:w-40 rounded-lg border-slate-200 py-1.5 text-sm focus:border-emerald-500 focus:ring-emerald-500 bg-slate-50"
-                            >
-                                <option value="">None (Standard)</option>
-                                <option value="Vegan">Vegan</option>
-                                <option value="Vegetarian">Vegetarian</option>
-                                <option value="Keto">Keto</option>
-                                <option value="Paleo">Paleo</option>
-                                <option value="Gluten-Free">Gluten-Free</option>
-                                <option value="High Protein">High Protein</option>
-                                <option value="Mediterranean">Mediterranean</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2 w-full xl:w-auto">
-                        {currentPlan?.plan_data?.shopping_list && currentPlan.plan_data.shopping_list.length > 0 && (
+                        <div className="flex gap-2 w-full xl:w-auto min-w-fit">
+                            {currentPlan && (
+                                <button
+                                    type="button"
+                                    onClick={handleResetPlan}
+                                    disabled={isResetting}
+                                    className="flex items-center justify-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl hover:bg-red-100 transition-all font-medium disabled:opacity-50"
+                                    title="Delete Plan"
+                                >
+                                    {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                                </button>
+                            )}
+                            {currentPlan?.plan_data?.shopping_list && currentPlan.plan_data.shopping_list.length > 0 && (
+                                <button
+                                    onClick={() => setShowShoppingList(true)}
+                                    className="hidden sm:flex items-center justify-center gap-2 bg-white text-emerald-600 border border-emerald-200 px-4 py-2 rounded-xl hover:bg-emerald-50 transition-all font-medium"
+                                >
+                                    <ShoppingBag className="h-4 w-4" />
+                                    List
+                                </button>
+                            )}
                             <button
-                                onClick={() => setShowShoppingList(true)}
-                                className="flex items-center justify-center gap-2 bg-white text-emerald-600 border border-emerald-200 px-4 py-2 rounded-xl hover:bg-emerald-50 transition-all font-medium py-2"
+                                onClick={handleGeneratePlan}
+                                disabled={isGenerating}
+                                className="flex-1 xl:flex-none flex items-center justify-center gap-2 bg-emerald-500 text-white px-4 py-2 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200/50 disabled:opacity-70 disabled:cursor-not-allowed text-sm font-medium"
                             >
-                                <ShoppingBag className="h-4 w-4" />
-                                Shopping List
+                                {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
+                                {isGenerating ? 'Gen...' : 'Generate'}
                             </button>
-                        )}
-                        <button
-                            onClick={handleGeneratePlan}
-                            disabled={isGenerating}
-                            className="flex-1 xl:flex-none flex items-center justify-center gap-2 bg-emerald-500 text-white px-6 py-2 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200/50 disabled:opacity-70 disabled:cursor-not-allowed"
-                        >
-                            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
-                            {isGenerating ? 'Generating...' : `Generate ${planDuration} Plan`}
-                        </button>
+                        </div>
                     </div>
                 </section>
 

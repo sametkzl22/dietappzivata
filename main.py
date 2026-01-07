@@ -1124,7 +1124,9 @@ def generate_diet_plan_endpoint(
         user_profile=user_profile,
         duration=request.duration.value,
         dietary_preferences=request.dietary_preferences,
-        pantry_ingredients=pantry_ingredients
+        pantry_ingredients=pantry_ingredients,
+        excluded_ingredients=request.excluded_ingredients,
+        included_ingredients=request.included_ingredients
     )
     
     if "error" in plan_result:
@@ -1183,6 +1185,34 @@ def get_current_plan(
         raise HTTPException(status_code=404, detail="No active plan found")
         
     return plan
+
+
+@app.delete(
+    "/plans/current",
+    status_code=status.HTTP_200_OK,
+    tags=["Start"],
+    summary="Delete/Archive the current active meal plan"
+)
+def delete_active_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reset the user's current plan.
+    Sets the status of any 'active' plan to 'archived'.
+    """
+    active_plan = db.query(DietPlan).filter(
+        DietPlan.user_id == current_user.id,
+        DietPlan.status == "active"
+    ).first()
+    
+    if active_plan:
+        active_plan.status = "archived"
+        db.commit()
+        return {"message": "Plan successfully reset"}
+    
+    # If no active plan, still return success as the goal (no active plan) is met
+    return {"message": "No active plan found to delete"}
 
 
 @app.get(

@@ -246,7 +246,9 @@ Keep responses concise and actionable."""
         user_profile: dict,
         duration: str,
         dietary_preferences: str = None,
-        pantry_ingredients: list = None
+        pantry_ingredients: list = None,
+        excluded_ingredients: list = None,
+        included_ingredients: list = None
     ) -> dict:
         """
         Generate a multi-day meal plan based on user profile and duration.
@@ -326,7 +328,7 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
             # We generate the monthly plan in one go if possible, or split if needed. 
             # Trying a 2-week generation that includes the shopping list, then 2x it.
             
-            prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, 14, is_monthly=True)
+            prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, 14, is_monthly=True, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients)
             
             try:
                 response = self.model.generate_content(prompt)
@@ -358,7 +360,7 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
 
 
         # Daily or Weekly (Normal single shot)
-        prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=is_strict_pantry)
+        prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=is_strict_pantry, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients)
 
         try:
             response = self.model.generate_content(prompt)
@@ -366,23 +368,66 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
         except Exception as e:
              return {"error": str(e), "days": []}
 
-    def _build_prompt(self, weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=False, is_monthly=False):
-        system_instruction = f"You are generating a {days_count}-day plan."
+    def _build_prompt(self, weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=False, is_monthly=False, excluded_ingredients=None, included_ingredients=None):
         
-        # Adjust prompt based on mode
-        shopping_list_instruction = ""
-        if is_monthly:
-            shopping_list_instruction = """
-**REQUIRED OUTPUT - SHOPPING LIST:**
-You MUST include a "shopping_list" array in the JSON response. This list should contain all the ingredients needed for this 2-week block.
-"shopping_list": ["Oats", "Chicken Breast", "Broccoli", ...]
-"""
-        
-        strict_warning = ""
-        if is_strict_pantry:
-            strict_warning = "REMEMBER: STRICTLY USE ONLY THE PROVIDED PANTRY ITEMS. Do not hallucinate ingredients the user doesn't have."
+        system_instruction = ""
+        task_instruction = ""
 
-        return f"""You are a professional nutritionist and chef. {system_instruction}
+        # Build Included String (Priority)
+        included_str = ""
+        if included_ingredients and len(included_ingredients) > 0:
+            included_list = ", ".join(included_ingredients)
+            included_str = f"""
+**PRIORITY INGREDIENTS:**
+User has explicitly listed these ingredients as AVAILABLE: {included_list}. 
+You MUST prioritize recipes that use these items. Treat them as the core of the meal plan.
+"""
+
+        # Build Exclusion String
+        exclusion_str = ""
+        if excluded_ingredients and len(excluded_ingredients) > 0:
+            exclusion_list = ", ".join(excluded_ingredients)
+            exclusion_str = f"""
+**CRITICAL: The user is ALLERGIC or HATES the following items: {exclusion_list}.**
+You must NOT include them in any recipe. If a recipe usually has them, substitute or omit.
+Check every ingredient list twice. If a forbidden item is found, the plan is invalid.
+"""
+
+        if is_strict_pantry and not is_monthly:
+            # STRICT MODE (User Provided Logic)
+            system_instruction = """
+            You are a Strict Pantry Chef. Your goal is to create a meal plan using ONLY the user's available inventory.
+            
+            **RULES:**
+            1. **ALLOWED STAPLES:** You may assume the user has Water, Salt, Black Pepper, Cooking Oil, Vinegar, and basic dried spices (e.g., Oregano, Cumin, Paprika).
+            2. **FORBIDDEN INGREDIENTS:** Do NOT use any Main Proteins (Meat, Fish, Eggs), Vegetables, Fruits, Grains, or Dairy unless they are explicitly listed in the 'User Inventory' below.
+            3. **NO SUBSTITUTIONS:** If the user has Chicken, do NOT suggest Salmon. If they have Rice, do NOT suggest Pasta.
+            4. **SIMPLICITY:** If the inventory is limited to single items (e.g., just Chicken), suggest simple dishes (e.g., 'Seared Chicken' or 'Chicken Soup') rather than complex curries needing missing items. Do not invent ingredients.
+            """
+            
+            task_instruction = f"""
+            **User Inventory:** {pantry_str.replace('User Inventory:', '')}
+            **User Goal:** {goal}
+            **Duration:** {days_count} Days
+            
+            Create a structured meal plan. If a balanced meal is impossible with current ingredients, provide the best possible simple meal using what is available.
+            """
+        elif is_monthly:
+            # MONTHLY MODE (Shopping List Allowed)
+            system_instruction = """
+            You are a Diet Planner. Create a diverse monthly plan. 
+            **You are free to suggest any healthy ingredients.**
+            
+            **REQUIRED OUTPUT - SHOPPING LIST:**
+            You MUST include a "shopping_list" array in the JSON response. This list should contain all the ingredients needed for this 2-week block.
+            """
+            task_instruction = f"Create a {days_count}-day plan for a {weight}kg user aimed at {goal}."
+        else:
+            # Fallback / Normal Mode
+            system_instruction = "You are a professional nutritionist. Create a balanced diet plan."
+            task_instruction = f"Create a {days_count}-day plan."
+
+        return f"""{system_instruction}
 
 **User Profile:**
 - Current Weight: {weight} kg
@@ -396,10 +441,10 @@ You MUST include a "shopping_list" array in the JSON response. This list should 
 - Daily Calorie Target: {daily_calories} kcal
 - Goal: {goal}
 {preferences_str}
-{pantry_str}
+{included_str}
+{exclusion_str}
 
-**Task:** Create a {days_count}-day meal plan with exactly {daily_calories} calories per day.
-{strict_warning}
+{task_instruction}
 
 **CRITICAL INSTRUCTION - RECIPES:**
 For EVERY meal, you MUST provide:
@@ -413,7 +458,6 @@ For EVERY meal, you MUST provide:
 3. Include protein, carbs, fat macros for each meal.
 4. **Variety:** Don't repeat the same meals every day.
 5. **Detailed Duration:** You MUST return {days_count} items in the 'days' array.
-{shopping_list_instruction}
 
 **Return ONLY valid JSON in this exact format, no other text:**
 {{
@@ -422,45 +466,18 @@ For EVERY meal, you MUST provide:
       "day_label": "Day 1",
       "meals": {{
         "breakfast": {{
-          "name": "Oatmeal with Berries",
-          "calories": 350,
-          "protein": "12g",
-          "carbs": "55g",
-          "fat": "8g",
-          "description": "Rolled oats with mixed berries",
-          "ingredients": ["1 cup oats", "1/2 cup berries", "1 tsp honey"],
-          "instructions": ["Boil oats", "Add berries", "Serve"]
+          "name": "Meal Name",
+          "calories": 400,
+          "protein": "30g",
+          "carbs": "40g",
+          "fat": "15g",
+          "description": "Short description",
+          "ingredients": ["Item 1", "Item 2"],
+          "instructions": ["Step 1", "Step 2"]
         }},
-        "lunch": {{
-          "name": "Grilled Chicken Salad",
-          "calories": 450,
-          "protein": "35g",
-          "carbs": "25g",
-          "fat": "20g",
-          "description": "Greens with grilled chicken",
-          "ingredients": ["Chicken breast", "Lettuce", "Tomato"],
-          "instructions": ["Grill chicken", "Toss salad", "Combine"]
-        }},
-        "dinner": {{
-          "name": "Salmon and Quinoa",
-          "calories": 550,
-          "protein": "40g",
-          "carbs": "30g",
-          "fat": "25g",
-          "description": "Baked salmon with fluffy quinoa",
-          "ingredients": ["Salmon fillet", "1 cup quinoa", "Lemon"],
-          "instructions": ["Bake salmon at 200C", "Cook quinoa", "Serve with lemon"]
-        }},
-        "snack": {{
-          "name": "Greek Yogurt",
-          "calories": 150,
-          "protein": "15g",
-          "carbs": "12g",
-          "fat": "5g",
-          "description": "Creamy yogurt cup",
-          "ingredients": ["1 cup Greek Yogurt"],
-          "instructions": ["Open and eat"]
-        }}
+        "lunch": {{ ... }},
+        "dinner": {{ ... }},
+        "snack": {{ ... }}
       }},
       "total_calories": {daily_calories}
     }}

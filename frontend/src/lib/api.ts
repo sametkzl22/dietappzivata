@@ -558,12 +558,41 @@ export async function updateProfile(data: UserUpdate): Promise<User> {
     return updatedUser;
 }
 
-export async function generateDietPlan(duration: 'daily' | 'weekly' | 'monthly', preferences?: string): Promise<DietPlan> {
-    const response = await api.post('/plans/generate', {
-        duration,
-        dietary_preferences: preferences
+export async function generateDietPlan(
+    duration: 'daily' | 'weekly' | 'monthly',
+    dietary_preferences?: string,
+    excluded_ingredients?: string[],
+    included_ingredients?: string[]
+): Promise<DietPlan> {
+    const url = `${API_BASE_URL}/plans/generate`;
+    const response = await fetchWithAuth(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            duration,
+            dietary_preferences,
+            excluded_ingredients: excluded_ingredients || [],
+            included_ingredients: included_ingredients || []
+        }),
     });
-    return response.data;
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || 'Failed to generate plan');
+    }
+
+    return response.json();
+}
+
+export async function deleteCurrentPlan(): Promise<void> {
+    const url = `${API_BASE_URL}/plans/current`;
+    const response = await fetchWithAuth(url, {
+        method: 'DELETE',
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed to delete plan');
+    }
 }
 
 export async function getCurrentDietPlan(): Promise<DietPlan | null> {

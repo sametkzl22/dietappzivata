@@ -324,6 +324,8 @@ class PlanGenerateRequest(BaseModel):
     """Request to generate a new meal plan."""
     duration: PlanDuration = Field(..., description="Plan duration: daily, weekly, or monthly")
     dietary_preferences: Optional[str] = Field(None, description="Optional dietary preferences")
+    excluded_ingredients: List[str] = Field(default=[], description="Ingredients to strictly exclude")
+    included_ingredients: List[str] = Field(default=[], description="Ingredients to prioritize (Must-Have)")
 
 
 class DayMeal(BaseModel):
