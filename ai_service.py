@@ -394,15 +394,20 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
 """
 
         if is_strict_pantry and not is_monthly:
-            # STRICT MODE (User Provided Logic)
+            # STRICT MODE (Pantry Chef + Trainer)
             system_instruction = """
-            You are a Strict Pantry Chef. Your goal is to create a meal plan using ONLY the user's available inventory.
+            You are a Strict Pantry Chef AND Personal Trainer. 
+            Goal 1: Create a meal plan using ONLY the user's available inventory.
+            Goal 2: Create a complimentary workout routine.
             
-            **RULES:**
-            1. **ALLOWED STAPLES:** You may assume the user has Water, Salt, Black Pepper, Cooking Oil, Vinegar, and basic dried spices (e.g., Oregano, Cumin, Paprika).
-            2. **FORBIDDEN INGREDIENTS:** Do NOT use any Main Proteins (Meat, Fish, Eggs), Vegetables, Fruits, Grains, or Dairy unless they are explicitly listed in the 'User Inventory' below.
-            3. **NO SUBSTITUTIONS:** If the user has Chicken, do NOT suggest Salmon. If they have Rice, do NOT suggest Pasta.
-            4. **SIMPLICITY:** If the inventory is limited to single items (e.g., just Chicken), suggest simple dishes (e.g., 'Seared Chicken' or 'Chicken Soup') rather than complex curries needing missing items. Do not invent ingredients.
+            **COOKING RULES:**
+            1. **ALLOWED STAPLES:** You may assume the user has Water, Salt, Black Pepper, Cooking Oil, Vinegar, and basic dried spices.
+            2. **FORBIDDEN INGREDIENTS:** Do NOT use any Main Proteins, Vegetables, Fruits, Grains, or Dairy unless listed in 'User Inventory'.
+            3. **NO SUBSTITUTIONS:** Use exact inventory.
+            
+            **FITNESS RULES:**
+            1. Suggest a workout based on user's activity level and goal.
+            2. Estimate calories burned accurately.
             """
             
             task_instruction = f"""
@@ -410,22 +415,24 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
             **User Goal:** {goal}
             **Duration:** {days_count} Days
             
-            Create a structured meal plan. If a balanced meal is impossible with current ingredients, provide the best possible simple meal using what is available.
+            Create a structured meal AND workout plan.
             """
         elif is_monthly:
-            # MONTHLY MODE (Shopping List Allowed)
+            # MONTHLY MODE (Planner + Trainer)
             system_instruction = """
-            You are a Diet Planner. Create a diverse monthly plan. 
-            **You are free to suggest any healthy ingredients.**
+            You are a Diet Planner AND Personal Trainer. Create a diverse monthly plan.
             
             **REQUIRED OUTPUT - SHOPPING LIST:**
-            You MUST include a "shopping_list" array in the JSON response. This list should contain all the ingredients needed for this 2-week block.
+            Include a "shopping_list" array.
+            
+            **FITNESS:**
+            Include daily workout routines ("exercises") that complement the diet.
             """
-            task_instruction = f"Create a {days_count}-day plan for a {weight}kg user aimed at {goal}."
+            task_instruction = f"Create a {days_count}-day diet and fitness plan for a {weight}kg user aimed at {goal}."
         else:
             # Fallback / Normal Mode
-            system_instruction = "You are a professional nutritionist. Create a balanced diet plan."
-            task_instruction = f"Create a {days_count}-day plan."
+            system_instruction = "You are a professional Nutritionist AND Personal Trainer. Create a balanced diet and exercise plan."
+            task_instruction = f"Create a {days_count}-day plan optimization for diet and fitness."
 
         return f"""{system_instruction}
 
@@ -445,12 +452,6 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
 {exclusion_str}
 
 {task_instruction}
-
-**CRITICAL INSTRUCTION - RECIPES:**
-For EVERY meal, you MUST provide:
-1. "description": A short appetizing description.
-2. "ingredients": A list of strings (e.g. ["1 cup oats", "2 eggs"]). CANNOT BE EMPTY.
-3. "instructions": A list of strings (e.g. ["Whisk eggs", "Fry in pan"]). CANNOT BE EMPTY.
 
 **Requirements:**
 1. Each day must have 4 meals: breakfast, lunch, dinner, snack.

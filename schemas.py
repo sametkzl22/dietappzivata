@@ -4,7 +4,7 @@ Pydantic Schemas for Diet & Fitness API.
 These schemas handle request/response validation and serialization.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict
 from enum import Enum
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -340,11 +340,26 @@ class DayMeal(BaseModel):
     instructions: List[str] = []
 
 
+class Exercise(BaseModel):
+    name: str
+    duration_minutes: int
+    calories_burned: int
+    sets: Optional[str] = None
+    reps: Optional[str] = None
+    instructions: Optional[str] = None
+
+
 class DayPlan(BaseModel):
-    """A single day's meal plan."""
+    """A single day's meal and fitness plan."""
     day_label: str = Field(..., description="e.g., 'Day 1', 'Monday'")
-    meals: dict = Field(..., description="Meals by type: breakfast, lunch, dinner, snack")
-    total_calories: int
+    meals: Dict[str, DayMeal] = Field(..., description="Meals by type: breakfast, lunch, dinner, snack")
+    total_calories_in: int = Field(..., alias="total_calories") # Mapping old name if possible, or new field
+    
+    # Fitness
+    exercises: List[Exercise] = []
+    total_calories_burned: int = 0
+    net_calories: int = 0
+    daily_tip: Optional[str] = None
 
 
 class DietPlanData(BaseModel):

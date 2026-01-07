@@ -116,6 +116,15 @@ export interface DayMeal {
     instructions?: string[];
 }
 
+export interface Exercise {
+    name: string;
+    duration_minutes: number;
+    calories_burned: number;
+    sets?: string;
+    reps?: string;
+    instructions?: string;
+}
+
 export interface DayPlan {
     day_label: string;
     meals: {
@@ -124,7 +133,14 @@ export interface DayPlan {
         dinner: DayMeal;
         snack: DayMeal;
     };
-    total_calories: number;
+    total_calories_in: number;
+    // Fitness
+    exercises: Exercise[];
+    total_calories_burned: number;
+    net_calories: number;
+    daily_tip?: string;
+    // Legacy support if needed, but safe to map
+    total_calories?: number;
 }
 
 export interface DietPlanValues {

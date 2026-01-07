@@ -14,10 +14,13 @@ import {
     Utensils,
     ShoppingBag,
     X,
-    Trash2
+    Trash2,
+    Check,
+    Dumbbell
 } from 'lucide-react';
 import StatsCard from '@/components/StatsCard';
 import MealCard, { MealCardSkeleton } from '@/components/MealCard';
+import ExerciseCard from '@/components/ExerciseCard';
 import CoachWidget from '@/components/CoachWidget';
 import {
     getCurrentUser,
@@ -54,6 +57,7 @@ export default function DashboardPage() {
     const [includedInput, setIncludedInput] = useState("");
 
     const [isResetting, setIsResetting] = useState(false);
+    const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
     // Fetch initial data
     useEffect(() => {
@@ -116,9 +120,14 @@ export default function DashboardPage() {
             );
             setCurrentPlan(newPlan);
             setSelectedDayIndex(0);
-        } catch (error) {
+        } catch (error: any) {
             console.error(error);
-            alert('Failed to generate plan');
+            const msg = error?.message || "";
+            if (msg.includes("429") || msg.toLowerCase().includes("resource exhausted")) {
+                alert("⚠️ AI is busy (Rate Limit). Please wait a minute and try again.");
+            } else {
+                alert('Failed to generate plan. Please try again.');
+            }
         } finally {
             setIsGenerating(false);
         }
@@ -139,22 +148,20 @@ export default function DashboardPage() {
         setList(list.filter(tag => tag !== tagToRemove));
     };
 
-    const handleResetPlan = async (e: React.MouseEvent) => {
-        e.preventDefault();
-
-        if (!window.confirm("Are you sure you want to delete your current plan? This action cannot be undone.")) return;
-
+    const confirmDelete = async () => {
         setIsResetting(true);
         try {
             await api.deleteCurrentPlan();
             setCurrentPlan(null);
+            setSelectedDayIndex(0);
             setExcludedItems([]);
             setIngredientInput("");
             setIncludedItems([]);
             setIncludedInput("");
+            setIsConfirmingDelete(false);
         } catch (error) {
             console.error("Failed to delete plan", error);
-            alert("Failed to reset plan");
+            alert("Failed to reset plan. Please check console.");
         } finally {
             setIsResetting(false);
         }
@@ -349,15 +356,34 @@ export default function DashboardPage() {
 
                         <div className="flex gap-2 w-full xl:w-auto min-w-fit">
                             {currentPlan && (
-                                <button
-                                    type="button"
-                                    onClick={handleResetPlan}
-                                    disabled={isResetting}
-                                    className="flex items-center justify-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl hover:bg-red-100 transition-all font-medium disabled:opacity-50"
-                                    title="Delete Plan"
-                                >
-                                    {isResetting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                                </button>
+                                isConfirmingDelete ? (
+                                    <div className="flex items-center gap-1 bg-red-50 border border-red-200 rounded-xl px-2 py-1.5 animate-in fade-in zoom-in duration-200">
+                                        <span className="text-xs font-bold text-red-700 mx-1">Sure?</span>
+                                        <button
+                                            onClick={confirmDelete}
+                                            disabled={isResetting}
+                                            className="p-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                        >
+                                            {isResetting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                                        </button>
+                                        <button
+                                            onClick={() => setIsConfirmingDelete(false)}
+                                            disabled={isResetting}
+                                            className="p-1 bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300 transition-colors"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsConfirmingDelete(true)}
+                                        className="flex items-center justify-center gap-2 bg-red-50 text-red-600 border border-red-200 px-3 py-2 rounded-xl hover:bg-red-100 transition-all font-medium"
+                                        title="Delete Plan"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </button>
+                                )
                             )}
                             {currentPlan?.plan_data?.shopping_list && currentPlan.plan_data.shopping_list.length > 0 && (
                                 <button
