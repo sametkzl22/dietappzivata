@@ -431,8 +431,16 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
             task_instruction = f"Create a {days_count}-day diet and fitness plan for a {weight}kg user aimed at {goal}."
         else:
             # Fallback / Normal Mode
-            system_instruction = "You are a professional Nutritionist AND Personal Trainer. Create a balanced diet and exercise plan."
-            task_instruction = f"Create a {days_count}-day plan optimization for diet and fitness."
+            system_instruction = """
+            You are a professional Nutritionist AND Personal Trainer. 
+            **YOUR MISSION:** Create a perfectly synchronized Diet & Fitness plan.
+            
+            **BALANCE LOGIC:**
+            1. **Workout Days:** Increase calorie intake (especially carbs/protein) slightly to fuel performance.
+            2. **Rest Days:** Lower calorie intake slightly to focus on recovery and fat loss (if applicable).
+            3. **Net Calculation:** Ensure (Total In - Burned) meets the user's deficit/surplus goal.
+            """
+            task_instruction = f"Create a {days_count}-day plan where Diet and Fitness are perfectly aligned."
 
         return f"""{system_instruction}
 
@@ -480,7 +488,20 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
         "dinner": {{ ... }},
         "snack": {{ ... }}
       }},
-      "total_calories": {daily_calories}
+      "total_calories_in": {daily_calories},
+      "exercises": [
+        {{
+          "name": "Push-ups",
+          "duration_minutes": 15,
+          "calories_burned": 100,
+          "sets": "3",
+          "reps": "15",
+          "instructions": "Keep back straight"
+        }}
+      ],
+      "total_calories_burned": 300,
+      "net_calories": {daily_calories - 300},
+      "daily_tip": "Focus on protein today."
     }}
   ],
   "target_calories_per_day": {daily_calories},

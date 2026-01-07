@@ -118,6 +118,10 @@ export default function DashboardPage() {
                 excludedItems,
                 includedItems
             );
+            console.log("DEBUG API: Full Plan Response:", newPlan);
+            if (newPlan && newPlan.plan_data && newPlan.plan_data.days) {
+                console.log("DEBUG API: Day 1 Exercises:", newPlan.plan_data.days[0].exercises);
+            }
             setCurrentPlan(newPlan);
             setSelectedDayIndex(0);
         } catch (error: any) {
@@ -496,30 +500,79 @@ export default function DashboardPage() {
                             </p>
                         </div>
                     ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                            {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((type) => {
-                                const meal = currentDay.meals[type];
-                                if (!meal) return null;
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Left Column: Nutrition (2/3 width) */}
+                            <div className="lg:col-span-2 space-y-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <div className="p-2 bg-emerald-100 text-emerald-600 rounded-lg">
+                                        <Utensils className="h-5 w-5" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-800">Nutrition Plan</h3>
+                                </div>
+                                <div className="grid gap-6">
+                                    {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((type) => {
+                                        const meal = currentDay.meals[type];
+                                        if (!meal) return null;
 
-                                return (
-                                    <MealCard
-                                        key={type}
-                                        mealType={type}
-                                        recipeName={meal.name}
-                                        calories={meal.calories}
-                                        targetCalories={meal.calories} // Target is roughly what was generated
-                                        protein={parseMacro(meal.protein)}
-                                        carbs={parseMacro(meal.carbs)}
-                                        fat={parseMacro(meal.fat)}
-                                        description={meal.description}
-                                        ingredients={meal.ingredients}
-                                        instructions={meal.instructions}
-                                        onRegenerate={() => { }} // Single regeneration not yet implemented
-                                        isLoading={false}
-                                        pantryScore={planDuration === 'daily' || planDuration === 'weekly' ? 100 : undefined}
-                                    />
-                                );
-                            })}
+                                        return (
+                                            <MealCard
+                                                key={type}
+                                                mealType={type}
+                                                recipeName={meal.name}
+                                                calories={meal.calories}
+                                                targetCalories={meal.calories}
+                                                protein={parseMacro(meal.protein)}
+                                                carbs={parseMacro(meal.carbs)}
+                                                fat={parseMacro(meal.fat)}
+                                                description={meal.description}
+                                                ingredients={meal.ingredients}
+                                                instructions={meal.instructions}
+                                                onRegenerate={() => { }}
+                                                isLoading={false}
+                                                pantryScore={planDuration === 'daily' || planDuration === 'weekly' ? 100 : undefined}
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Right Column: Fitness (1/3 width) */}
+                            <div className="space-y-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                                        <Dumbbell className="h-5 w-5" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-slate-800">Workout Plan</h3>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {currentDay.exercises && currentDay.exercises.length > 0 ? (
+                                        <div className="grid gap-4">
+                                            {currentDay.exercises.map((exercise, idx) => (
+                                                <ExerciseCard key={idx} exercise={exercise} />
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="p-6 bg-slate-50 border border-slate-100 rounded-xl text-center text-slate-500 italic">
+                                            <p className="font-medium">Rest Day / Active Recovery</p>
+                                            <p className="text-xs mt-1">Go for a light walk or stretch.</p>
+                                        </div>
+                                    )}
+
+                                    {/* Daily Tip Card if exists */}
+                                    {currentDay.daily_tip && (
+                                        <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-100 rounded-xl p-4">
+                                            <h4 className="font-bold text-violet-800 text-sm mb-2 flex items-center gap-2">
+                                                <Flame className="h-4 w-4" />
+                                                Daily Coach Tip
+                                            </h4>
+                                            <p className="text-sm text-violet-700 leading-relaxed">
+                                                {currentDay.daily_tip}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
                 </section>
