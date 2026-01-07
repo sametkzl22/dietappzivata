@@ -392,6 +392,51 @@ export async function chatWithCoach(
 }
 
 // ============================================================================
+// AI Recipe Generation
+// ============================================================================
+
+export interface AIRecipe {
+    name: string;
+    time_minutes: number;
+    calories: number;
+    protein: string;
+    carbs: string;
+    fat: string;
+    ingredients_used: string[];
+    missing_ingredients: string[];
+    instructions: string[];
+    health_tip: string;
+}
+
+export interface AIRecipeResponse {
+    recipes: AIRecipe[];
+    user_tdee: number | null;
+    user_goal: string | null;
+}
+
+export interface SuggestRecipeRequest {
+    ingredients: string[];
+    dietary_preferences?: string;
+    meal_type?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+}
+
+/**
+ * Get AI-powered recipe suggestions based on ingredients and user health profile
+ */
+export async function suggestRecipes(request: SuggestRecipeRequest): Promise<AIRecipeResponse> {
+    const response = await fetchWithAuth(`${API_BASE_URL}/ai/suggest-recipes`, {
+        method: 'POST',
+        body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to generate recipes');
+    }
+    return response.json();
+}
+
+// ============================================================================
 // Mock Data (for development/demo when backend is unavailable)
 // ============================================================================
 
@@ -417,4 +462,39 @@ export const mockHealthMetrics: HealthMetrics = {
     body_fat_percent: 16.94,
     bmr: 1748.75,
     tdee: 2710.56,
+};
+
+// Axios-like API wrapper for backward compatibility
+export const api = {
+    get: async (url: string) => {
+        const response = await fetchWithAuth(`${API_BASE_URL}${url}`);
+        return { data: await response.json() };
+    },
+    post: async (url: string, data?: unknown) => {
+        const response = await fetchWithAuth(`${API_BASE_URL}${url}`, {
+            method: 'POST',
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        return { data: await response.json() };
+    },
+    put: async (url: string, data?: unknown) => {
+        const response = await fetchWithAuth(`${API_BASE_URL}${url}`, {
+            method: 'PUT',
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        return { data: await response.json() };
+    },
+    delete: async (url: string) => {
+        const response = await fetchWithAuth(`${API_BASE_URL}${url}`, {
+            method: 'DELETE',
+        });
+        return { data: response.ok };
+    },
+    patch: async (url: string, data?: unknown) => {
+        const response = await fetchWithAuth(`${API_BASE_URL}${url}`, {
+            method: 'PATCH',
+            body: data ? JSON.stringify(data) : undefined,
+        });
+        return { data: await response.json() };
+    },
 };

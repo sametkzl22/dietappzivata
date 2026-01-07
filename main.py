@@ -17,6 +17,7 @@ import os
 from datetime import timedelta
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -33,7 +34,8 @@ from schemas import (
     IngredientCreate, IngredientResponse,
     PantryItemCreate, PantryItemResponse, PantryUpdate,
     MealPlanRequest, MealPlanResponse, MealSlot,
-    ChatRequest, ChatResponse
+    ChatRequest, ChatResponse,
+    SuggestRecipeRequest, AIRecipeResponse
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
@@ -79,6 +81,18 @@ A comprehensive backend API for diet and fitness tracking.
 
 # Initialize AI Coach with API key from environment
 ai_coach = GeminiCoach(api_key=os.getenv("GEMINI_API_KEY"))
+
+# CORS Middleware Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -944,6 +958,71 @@ def chat_with_ai(
     return ChatResponse(
         response=response,
         user_context_used=user_context is not None
+    )
+
+
+@app.post(
+    "/ai/suggest-recipes",
+    response_model=AIRecipeResponse,
+    tags=["AI"],
+    summary="Get personalized AI recipe suggestions"
+)
+def suggest_recipes(
+    request: SuggestRecipeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate personalized recipe suggestions based on user's ingredients and health profile.
+    
+    The AI considers:
+    - **Ingredients**: What the user has available
+    - **TDEE**: To suggest appropriate portion sizes
+    - **BMI**: To focus on weight goals
+    - **Activity Level**: To adjust protein and calories
+    
+    Returns 3 recipe suggestions with personalized health tips.
+    """
+    # Get user's health metrics for personalization
+    try:
+        metrics = current_user.get_health_metrics()
+        user_health = {
+            "bmi": metrics["bmi"],
+            "body_fat_percent": metrics["body_fat_percent"],
+            "bmr": metrics["bmr"],
+            "tdee": metrics["tdee"],
+            "activity_level": current_user.activity_level.value if current_user.activity_level else "moderate",
+            "gender": current_user.gender,
+            "age": current_user.age
+        }
+    except ValueError:
+        # Use default values if calculations fail
+        user_health = {
+            "tdee": 2000,
+            "bmi": 22,
+            "activity_level": "moderate",
+            "body_fat_percent": 20
+        }
+    
+    # Call AI service to generate recipes
+    result = ai_coach.suggest_recipes(
+        ingredients=request.ingredients,
+        user_health=user_health,
+        dietary_preferences=request.dietary_preferences,
+        meal_type=request.meal_type.value if request.meal_type else None
+    )
+    
+    # Handle errors
+    if "error" in result and result["error"]:
+        raise HTTPException(
+            status_code=500,
+            detail=f"AI recipe generation failed: {result['error']}"
+        )
+    
+    return AIRecipeResponse(
+        recipes=result.get("recipes", []),
+        user_tdee=result.get("user_tdee"),
+        user_goal=result.get("user_goal")
     )
 
 

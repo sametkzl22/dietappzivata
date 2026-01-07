@@ -57,8 +57,8 @@ export default function Navbar() {
     // User navigation links
     const userLinks = [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-        { href: '/onboarding', label: 'My Pantry', icon: ChefHat },
-        { href: '/onboarding', label: 'Profile', icon: UserIcon },
+        { href: '/pantry', label: 'My Pantry', icon: ChefHat },
+        { href: '/profile', label: 'Profile', icon: UserIcon },
     ];
 
     // Admin link
@@ -68,8 +68,8 @@ export default function Navbar() {
 
     return (
         <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled
-                ? 'bg-white/95 backdrop-blur-xl shadow-lg shadow-slate-200/50 border-b border-slate-100'
-                : 'bg-white/80 backdrop-blur-md'
+            ? 'bg-white/95 backdrop-blur-xl shadow-lg shadow-slate-200/50 border-b border-slate-100'
+            : 'bg-white/80 backdrop-blur-md'
             }`}>
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center justify-between h-16">
@@ -90,8 +90,8 @@ export default function Navbar() {
                                 key={link.href + link.label}
                                 href={link.href}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${pathname === link.href
-                                        ? 'bg-emerald-50 text-emerald-600'
-                                        : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
                                     }`}
                             >
                                 <link.icon className="h-4 w-4" />
@@ -117,12 +117,12 @@ export default function Navbar() {
                                     onClick={() => setDropdownOpen(!dropdownOpen)}
                                     className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition-all"
                                 >
-                                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md ${user.is_superuser
-                                            ? 'bg-gradient-to-br from-amber-400 to-orange-500'
-                                            : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                                    {/* <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-md ${user.is_superuser
+                                        ? 'bg-gradient-to-br from-amber-400 to-orange-500'
+                                        : 'bg-gradient-to-br from-emerald-400 to-teal-500'
                                         }`}>
-                                        {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
-                                    </div>
+                                      {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+                                    </div> */}
                                     <div className="text-left hidden lg:block">
                                         <p className="text-sm font-medium text-slate-900">{user.name || 'User'}</p>
                                         <p className="text-xs text-slate-500">{user.is_superuser ? 'Admin' : 'Member'}</p>
@@ -223,8 +223,8 @@ export default function Navbar() {
                                 href={link.href}
                                 onClick={() => setIsOpen(false)}
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${pathname === link.href
-                                        ? 'bg-emerald-50 text-emerald-600'
-                                        : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
+                                    ? 'bg-emerald-50 text-emerald-600'
+                                    : 'text-slate-600 hover:text-emerald-600 hover:bg-emerald-50'
                                     }`}
                             >
                                 <link.icon className="h-5 w-5" />
@@ -247,8 +247,8 @@ export default function Navbar() {
                                 <>
                                     <div className="flex items-center gap-3 px-4 py-3">
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold shadow-md ${user.is_superuser
-                                                ? 'bg-gradient-to-br from-amber-400 to-orange-500'
-                                                : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                                            ? 'bg-gradient-to-br from-amber-400 to-orange-500'
+                                            : 'bg-gradient-to-br from-emerald-400 to-teal-500'
                                             }`}>
                                             {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
                                         </div>

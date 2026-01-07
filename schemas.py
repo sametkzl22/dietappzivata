@@ -272,3 +272,35 @@ class ChatResponse(BaseModel):
     """Response from AI coach."""
     response: str
     user_context_used: bool = False
+
+
+# ============================================================================
+# AI Recipe Generation Schemas
+# ============================================================================
+
+class AIRecipe(BaseModel):
+    """A single AI-generated recipe with nutritional info and health tips."""
+    name: str = Field(..., description="Recipe name")
+    time_minutes: int = Field(..., ge=1, description="Cooking time in minutes")
+    calories: int = Field(..., ge=0, description="Total calories for the portion")
+    protein: str = Field(..., description="Protein content (e.g., '35g')")
+    carbs: str = Field(..., description="Carbohydrate content (e.g., '45g')")
+    fat: str = Field(..., description="Fat content (e.g., '12g')")
+    ingredients_used: List[str] = Field(..., description="Ingredients from user's pantry")
+    missing_ingredients: List[str] = Field(default=[], description="Ingredients user might need to buy")
+    instructions: List[str] = Field(..., description="Step-by-step cooking instructions")
+    health_tip: str = Field(..., description="Personalized health tip based on user's profile")
+
+
+class AIRecipeResponse(BaseModel):
+    """Response containing AI-generated recipes."""
+    recipes: List[AIRecipe]
+    user_tdee: Optional[float] = Field(None, description="User's TDEE for context")
+    user_goal: Optional[str] = Field(None, description="User's fitness goal")
+
+
+class SuggestRecipeRequest(BaseModel):
+    """Request for AI recipe suggestions."""
+    ingredients: List[str] = Field(..., min_length=1, description="List of available ingredients")
+    dietary_preferences: Optional[str] = Field(None, description="e.g., 'vegetarian', 'low-carb', 'high-protein'")
+    meal_type: Optional[MealType] = Field(None, description="Preferred meal type")

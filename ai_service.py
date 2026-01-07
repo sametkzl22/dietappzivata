@@ -6,6 +6,7 @@ diet and fitness coaching using Google Gemini API.
 """
 
 from typing import Dict, Optional
+import json
 
 try:
     import google.generativeai as genai
@@ -121,3 +122,121 @@ Keep responses concise and actionable."""
         message = f"Analyze this meal for nutritional value: {meal_description}"
         return self.chat(message)
 
+    def suggest_recipes(
+        self,
+        ingredients: list,
+        user_health: dict,
+        dietary_preferences: str = None,
+        meal_type: str = None
+    ) -> dict:
+        """
+        Generate personalized recipe suggestions based on user's ingredients and health profile.
+        
+        Args:
+            ingredients: List of available ingredients
+            user_health: Dict with BMI, TDEE, activity_level, body_fat, etc.
+            dietary_preferences: Optional dietary preferences (vegetarian, low-carb, etc.)
+            meal_type: Optional preferred meal type (breakfast, lunch, dinner, snack)
+        
+        Returns:
+            dict: Parsed recipe suggestions with nutritional info
+        """
+        if not self.model:
+            return {
+                "recipes": [],
+                "error": "AI Service not configured"
+            }
+        
+        # Build health context
+        tdee = user_health.get('tdee', 2000)
+        bmi = user_health.get('bmi', 22)
+        activity = user_health.get('activity_level', 'moderate')
+        body_fat = user_health.get('body_fat_percent', 20)
+        
+        # Calculate per-meal calories (assuming 3 main meals)
+        per_meal_cal = int(tdee / 3)
+        
+        # Determine health focus based on BMI
+        if bmi < 18.5:
+            health_focus = "calorie-dense meals to support healthy weight gain"
+        elif bmi > 25:
+            health_focus = "lighter, nutrient-dense meals for weight management"
+        else:
+            health_focus = "balanced nutrition for maintaining healthy weight"
+        
+        # Build prompt
+        ingredients_str = ", ".join(ingredients)
+        
+        prompt = f"""You are a professional nutritionist and chef. Generate 3 healthy recipe suggestions based on:
+
+**Available Ingredients:** {ingredients_str}
+
+**User's Health Profile:**
+- Daily Calorie Target (TDEE): {tdee} kcal
+- BMI: {bmi}
+- Activity Level: {activity}
+- Body Fat: {body_fat}%
+- Health Focus: {health_focus}
+- Target calories per meal: approximately {per_meal_cal} kcal
+
+{f"**Dietary Preference:** {dietary_preferences}" if dietary_preferences else ""}
+{f"**Meal Type:** {meal_type}" if meal_type else ""}
+
+**Important Guidelines:**
+1. Portion sizes should be appropriate for the user's TDEE
+2. Include protein-rich options for the {activity} activity level
+3. Each recipe should include a personalized health tip
+4. List any common ingredients the user might be missing
+
+**Return ONLY valid JSON in this exact format, no other text:**
+{{
+  "recipes": [
+    {{
+      "name": "Recipe Name",
+      "time_minutes": 25,
+      "calories": {per_meal_cal},
+      "protein": "30g",
+      "carbs": "45g",
+      "fat": "15g",
+      "ingredients_used": ["ingredient1", "ingredient2"],
+      "missing_ingredients": ["salt", "olive oil"],
+      "instructions": ["Step 1...", "Step 2...", "Step 3..."],
+      "health_tip": "This recipe is great for your active lifestyle because..."
+    }}
+  ]
+}}"""
+
+        try:
+            response = self.model.generate_content(prompt)
+            response_text = response.text.strip()
+            
+            # Clean up response - remove markdown code blocks if present
+            if response_text.startswith("```"):
+                lines = response_text.split("\n")
+                # Remove first and last lines if they're code block markers
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                if lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                response_text = "\n".join(lines)
+            
+            # Parse JSON response
+            result = json.loads(response_text)
+            
+            # Add user context to response
+            result['user_tdee'] = tdee
+            result['user_goal'] = health_focus
+            
+            return result
+            
+        except json.JSONDecodeError as e:
+            return {
+                "recipes": [],
+                "error": f"Failed to parse AI response: {str(e)}",
+                "raw_response": response_text if 'response_text' in locals() else None
+            }
+        except Exception as e:
+            return {
+                "recipes": [],
+                "error": f"AI Error: {str(e)}"
+            }
