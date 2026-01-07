@@ -3,7 +3,7 @@
  * Communicates with the FastAPI backend with JWT Authentication
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 // ============================================================================
 // Auth Token Management
@@ -112,6 +112,8 @@ export interface DayMeal {
     carbs: string;
     fat: string;
     description?: string;
+    ingredients?: string[];
+    instructions?: string[];
 }
 
 export interface DayPlan {
@@ -130,6 +132,7 @@ export interface DietPlanValues {
     target_calories_per_day?: number;
     user_tdee?: number;
     goal?: string;
+    shopping_list?: string[];
 }
 
 export interface DietPlan {

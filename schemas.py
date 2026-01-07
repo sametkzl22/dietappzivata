@@ -334,6 +334,8 @@ class DayMeal(BaseModel):
     carbs: str
     fat: str
     description: Optional[str] = None
+    ingredients: List[str] = []
+    instructions: List[str] = []
 
 
 class DayPlan(BaseModel):

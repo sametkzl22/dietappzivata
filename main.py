@@ -36,7 +36,8 @@ from schemas import (
     MealPlanRequest, MealPlanResponse, MealSlot,
     ChatRequest, ChatResponse,
     SuggestRecipeRequest, AIRecipeResponse,
-    PlanGenerateRequest, DietPlanResponse, DietPlanListResponse
+    PlanGenerateRequest, DietPlanResponse, DietPlanListResponse,
+    PlanDuration
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
@@ -89,6 +90,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://0.0.0.0:3000",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -1080,7 +1082,7 @@ def suggest_recipes(
     tags=["Start"],
     summary="Generate a new personalized meal plan (daily/weekly/monthly)"
 )
-def generate_message_plan(
+def generate_diet_plan_endpoint(
     request: PlanGenerateRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -1107,15 +1109,22 @@ def generate_message_plan(
         "target_weight_kg": current_user.target_weight_kg,
         "age": current_user.age,
         "gender": current_user.gender,
-        "activity_level": current_user.activity_level.value,
+        "activity_level": current_user.activity_level.value if current_user.activity_level else "moderate",
         **health_metrics
     }
+
+    pantry_ingredients = []
+    if request.duration in [PlanDuration.daily, PlanDuration.weekly]:
+        # Using joinedload for performance if possible, but basic join is fine
+        pantry_items = db.query(Pantry).join(Ingredient).filter(Pantry.user_id == current_user.id).all()
+        pantry_ingredients = [item.ingredient.name for item in pantry_items]
     
-    # 2. Call AI Service
+    # 3. Call AI Service
     plan_result = ai_coach.generate_diet_plan(
         user_profile=user_profile,
         duration=request.duration.value,
-        dietary_preferences=request.dietary_preferences
+        dietary_preferences=request.dietary_preferences,
+        pantry_ingredients=pantry_ingredients
     )
     
     if "error" in plan_result:

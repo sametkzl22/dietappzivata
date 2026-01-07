@@ -245,7 +245,8 @@ Keep responses concise and actionable."""
         self,
         user_profile: dict,
         duration: str,
-        dietary_preferences: str = None
+        dietary_preferences: str = None,
+        pantry_ingredients: list = None
     ) -> dict:
         """
         Generate a multi-day meal plan based on user profile and duration.
@@ -253,7 +254,8 @@ Keep responses concise and actionable."""
         Args:
             user_profile: Dict with weight_kg, height_cm, target_weight_kg, tdee, bmi, activity_level
             duration: 'daily', 'weekly', or 'monthly'
-            dietary_preferences: Optional dietary preferences (e.g., 'high-protein')
+            dietary_preferences: Optional dietary preferences (e.g., 'vegan', 'keto')
+            pantry_ingredients: Optional list of available ingredients (prioritized for daily/weekly)
         
         Returns:
             Dict with 'days' array containing meal plans for each day
@@ -262,10 +264,11 @@ Keep responses concise and actionable."""
             return {"error": "AI Service not configured", "days": []}
         
         # Determine number of days
+        # For monthly, we generate 4 weeks (28 days)
         days_count = {
             "daily": 1,
             "weekly": 7,
-            "monthly": 30
+            "monthly": 28
         }.get(duration, 1)
         
         # Extract user data
@@ -292,9 +295,94 @@ Keep responses concise and actionable."""
             daily_calories = int(tdee)
             goal = "maintenance"
         
+        # Context building
         preferences_str = f"\n**Dietary Preferences:** {dietary_preferences}" if dietary_preferences else ""
         
-        prompt = f"""You are a professional dietitian creating a personalized {duration} meal plan.
+        # Pantry Logic
+        pantry_str = ""
+        is_strict_pantry = False
+        
+        if duration in ["daily", "weekly"] and pantry_ingredients:
+            is_strict_pantry = True
+            pantry_list = ", ".join(pantry_ingredients)
+            pantry_str = f"""
+**STRICT INGREDIENT CONSTRAINT:**
+You are restricted to the User's Pantry below + basic staples (oil, salt, pepper, water, basic spices).
+**User's Pantry:** {pantry_list}
+DO NOT suggest recipes requiring other main ingredients. If a recipe is impossible with these items, suggest the closest possible simple meal using ONLY these items.
+"""
+        elif duration == "monthly":
+            pantry_str = """
+**MONTHLY PLAN STRATEGY - SHOPPING LIST FIRST:**
+1. First, design a "Master Monthly Shopping List" of healthy, versatile, cost-effective ingredients aligned with the user's goal.
+2. Then, generate the 28-day meal plan using *strictly* the ingredients from this Master List to minimize waste and cost.
+"""
+            
+        if duration == "monthly":
+            # Generate 2 weeks separately and duplicate them to form 4 weeks (28 days)
+            # This balances variety with generation speed/timeouts
+            full_plan = {"days": [], "target_calories_per_day": 0, "user_tdee": tdee, "goal": goal, "shopping_list": []}
+            
+            # We generate the monthly plan in one go if possible, or split if needed. 
+            # Trying a 2-week generation that includes the shopping list, then 2x it.
+            
+            prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, 14, is_monthly=True)
+            
+            try:
+                response = self.model.generate_content(prompt)
+                result = self._parse_json_response(response.text)
+                
+                days_chunk = result.get("days", [])
+                full_plan["shopping_list"] = result.get("shopping_list", []) # Capture the shopping list
+                
+                # Add first 2 weeks
+                for i, day in enumerate(days_chunk):
+                    day["day_label"] = f"Day {i + 1}"
+                    full_plan["days"].append(day)
+                    
+                # Add duplicate 2 weeks (Week 1&2 -> Week 3&4)
+                import copy
+                duplicated_days = copy.deepcopy(days_chunk)
+                for i, day in enumerate(duplicated_days):
+                    day["day_label"] = f"Day {i + 15}" # Days 15-28
+                    full_plan["days"].append(day)
+
+                full_plan["target_calories_per_day"] = result.get("target_calories_per_day", daily_calories)
+                
+                return full_plan
+
+            except Exception as e:
+                # Fallback or error
+                print(f"Error generating monthly plan: {e}")
+                return {"error": "Failed to generate monthly plan. Please try again.", "days": []}
+
+
+        # Daily or Weekly (Normal single shot)
+        prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=is_strict_pantry)
+
+        try:
+            response = self.model.generate_content(prompt)
+            return self._parse_json_response(response.text)
+        except Exception as e:
+             return {"error": str(e), "days": []}
+
+    def _build_prompt(self, weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=False, is_monthly=False):
+        system_instruction = f"You are generating a {days_count}-day plan."
+        
+        # Adjust prompt based on mode
+        shopping_list_instruction = ""
+        if is_monthly:
+            shopping_list_instruction = """
+**REQUIRED OUTPUT - SHOPPING LIST:**
+You MUST include a "shopping_list" array in the JSON response. This list should contain all the ingredients needed for this 2-week block.
+"shopping_list": ["Oats", "Chicken Breast", "Broccoli", ...]
+"""
+        
+        strict_warning = ""
+        if is_strict_pantry:
+            strict_warning = "REMEMBER: STRICTLY USE ONLY THE PROVIDED PANTRY ITEMS. Do not hallucinate ingredients the user doesn't have."
+
+        return f"""You are a professional nutritionist and chef. {system_instruction}
 
 **User Profile:**
 - Current Weight: {weight} kg
@@ -308,15 +396,24 @@ Keep responses concise and actionable."""
 - Daily Calorie Target: {daily_calories} kcal
 - Goal: {goal}
 {preferences_str}
+{pantry_str}
 
-**Create a {days_count}-day meal plan with exactly {daily_calories} calories per day.**
+**Task:** Create a {days_count}-day meal plan with exactly {daily_calories} calories per day.
+{strict_warning}
+
+**CRITICAL INSTRUCTION - RECIPES:**
+For EVERY meal, you MUST provide:
+1. "description": A short appetizing description.
+2. "ingredients": A list of strings (e.g. ["1 cup oats", "2 eggs"]). CANNOT BE EMPTY.
+3. "instructions": A list of strings (e.g. ["Whisk eggs", "Fry in pan"]). CANNOT BE EMPTY.
 
 **Requirements:**
-1. Each day must have 4 meals: breakfast, lunch, dinner, snack
-2. Calories should total approximately {daily_calories} per day
-3. Include protein, carbs, fat macros for each meal
-4. Provide variety - don't repeat the same meals every day
-5. Make recipes practical and easy to prepare
+1. Each day must have 4 meals: breakfast, lunch, dinner, snack.
+2. Calories should total approximately {daily_calories} per day.
+3. Include protein, carbs, fat macros for each meal.
+4. **Variety:** Don't repeat the same meals every day.
+5. **Detailed Duration:** You MUST return {days_count} items in the 'days' array.
+{shopping_list_instruction}
 
 **Return ONLY valid JSON in this exact format, no other text:**
 {{
@@ -330,7 +427,9 @@ Keep responses concise and actionable."""
           "protein": "12g",
           "carbs": "55g",
           "fat": "8g",
-          "description": "Rolled oats with mixed berries and honey"
+          "description": "Rolled oats with mixed berries",
+          "ingredients": ["1 cup oats", "1/2 cup berries", "1 tsp honey"],
+          "instructions": ["Boil oats", "Add berries", "Serve"]
         }},
         "lunch": {{
           "name": "Grilled Chicken Salad",
@@ -338,15 +437,19 @@ Keep responses concise and actionable."""
           "protein": "35g",
           "carbs": "25g",
           "fat": "20g",
-          "description": "Mixed greens with grilled chicken breast"
+          "description": "Greens with grilled chicken",
+          "ingredients": ["Chicken breast", "Lettuce", "Tomato"],
+          "instructions": ["Grill chicken", "Toss salad", "Combine"]
         }},
         "dinner": {{
-          "name": "Salmon with Vegetables",
+          "name": "Salmon and Quinoa",
           "calories": 550,
           "protein": "40g",
           "carbs": "30g",
           "fat": "25g",
-          "description": "Baked salmon with roasted vegetables"
+          "description": "Baked salmon with fluffy quinoa",
+          "ingredients": ["Salmon fillet", "1 cup quinoa", "Lemon"],
+          "instructions": ["Bake salmon at 200C", "Cook quinoa", "Serve with lemon"]
         }},
         "snack": {{
           "name": "Greek Yogurt",
@@ -354,7 +457,9 @@ Keep responses concise and actionable."""
           "protein": "15g",
           "carbs": "12g",
           "fat": "5g",
-          "description": "Plain Greek yogurt with nuts"
+          "description": "Creamy yogurt cup",
+          "ingredients": ["1 cup Greek Yogurt"],
+          "instructions": ["Open and eat"]
         }}
       }},
       "total_calories": {daily_calories}
@@ -363,37 +468,18 @@ Keep responses concise and actionable."""
   "target_calories_per_day": {daily_calories},
   "user_tdee": {tdee},
   "goal": "{goal}"
+  {', "shopping_list": ["item1", "item2"]' if is_monthly else ''}
 }}
+"""
 
-Generate {days_count} days with this exact structure. Each day should have different meals for variety."""
-
-        try:
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
-            
-            # Clean up response - remove markdown code blocks if present
-            if response_text.startswith("```"):
-                lines = response_text.split("\n")
-                if lines[0].startswith("```"):
-                    lines = lines[1:]
-                if lines[-1].strip() == "```":
-                    lines = lines[:-1]
-                response_text = "\n".join(lines)
-            
-            # Parse JSON response
-            result = json.loads(response_text)
-            
-            return result
-            
-        except json.JSONDecodeError as e:
-            return {
-                "days": [],
-                "error": f"Failed to parse AI response: {str(e)}",
-                "raw_response": response_text if 'response_text' in locals() else None
-            }
-        except Exception as e:
-            return {
-                "days": [],
-                "error": f"AI Error: {str(e)}"
-            }
+    def _parse_json_response(self, response_text):
+        response_text = response_text.strip()
+        if response_text.startswith("```"):
+            lines = response_text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines[-1].strip() == "```":
+                lines = lines[:-1]
+            response_text = "\n".join(lines)
+        return json.loads(response_text)
 

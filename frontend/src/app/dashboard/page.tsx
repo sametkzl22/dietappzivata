@@ -8,11 +8,12 @@ import {
     Flame,
     Activity,
     Calendar,
-    ArrowRight,
     Loader2,
     ChevronLeft,
     ChevronRight,
-    Utensils
+    Utensils,
+    ShoppingBag,
+    X
 } from 'lucide-react';
 import StatsCard from '@/components/StatsCard';
 import MealCard, { MealCardSkeleton } from '@/components/MealCard';
@@ -36,9 +37,11 @@ export default function DashboardPage() {
     const [currentPlan, setCurrentPlan] = useState<DietPlan | null>(null);
     const [selectedDayIndex, setSelectedDayIndex] = useState(0);
     const [planDuration, setPlanDuration] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+    const [dietaryPreference, setDietaryPreference] = useState('Standard');
 
     const [isLoading, setIsLoading] = useState(true);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [showShoppingList, setShowShoppingList] = useState(false);
 
     // Fetch initial data
     useEffect(() => {
@@ -74,7 +77,7 @@ export default function DashboardPage() {
 
                 if (planData) {
                     setCurrentPlan(planData);
-                    setPlanDuration(planData.duration);
+                    setPlanDuration(planData.duration as any);
                     setSelectedDayIndex(0);
                 }
 
@@ -92,7 +95,7 @@ export default function DashboardPage() {
     const handleGeneratePlan = async () => {
         setIsGenerating(true);
         try {
-            const newPlan = await generateDietPlan(planDuration);
+            const newPlan = await generateDietPlan(planDuration, dietaryPreference);
             setCurrentPlan(newPlan);
             setSelectedDayIndex(0);
         } catch (err) {
@@ -206,35 +209,109 @@ export default function DashboardPage() {
                 </section>
 
                 {/* Meal Plan Controls */}
-                <section className="mb-6 flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                    <div className="flex items-center gap-2">
-                        <Utensils className="h-5 w-5 text-emerald-600" />
-                        <span className="font-semibold text-slate-700">Plan Duration:</span>
-                        <div className="flex bg-slate-100 rounded-lg p-1">
-                            {(['daily', 'weekly', 'monthly'] as const).map((d) => (
-                                <button
-                                    key={d}
-                                    onClick={() => setPlanDuration(d)}
-                                    className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${planDuration === d
-                                        ? 'bg-white text-emerald-600 shadow-sm'
-                                        : 'text-slate-500 hover:text-emerald-500'
-                                        }`}
-                                >
-                                    {d.charAt(0).toUpperCase() + d.slice(1)}
-                                </button>
-                            ))}
+                <section className="mb-6 flex flex-col xl:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="flex flex-col sm:flex-row items-center gap-4 w-full xl:w-auto">
+                        <div className="flex items-center gap-2">
+                            <Utensils className="h-5 w-5 text-emerald-600" />
+                            <span className="font-semibold text-slate-700 whitespace-nowrap">Duration:</span>
+                            <div className="flex bg-slate-100 rounded-lg p-1">
+                                {(['daily', 'weekly', 'monthly'] as const).map((d) => (
+                                    <button
+                                        key={d}
+                                        onClick={() => setPlanDuration(d)}
+                                        className={`px-3 py-1 rounded-md text-sm font-medium transition-all ${planDuration === d
+                                            ? 'bg-white text-emerald-600 shadow-sm'
+                                            : 'text-slate-500 hover:text-emerald-500'
+                                            }`}
+                                    >
+                                        {d.charAt(0).toUpperCase() + d.slice(1)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <span className="font-semibold text-slate-700 whitespace-nowrap">Preference:</span>
+                            <select
+                                value={dietaryPreference}
+                                onChange={(e) => setDietaryPreference(e.target.value)}
+                                className="block w-full sm:w-40 rounded-lg border-slate-200 py-1.5 text-sm focus:border-emerald-500 focus:ring-emerald-500 bg-slate-50"
+                            >
+                                <option value="">None (Standard)</option>
+                                <option value="Vegan">Vegan</option>
+                                <option value="Vegetarian">Vegetarian</option>
+                                <option value="Keto">Keto</option>
+                                <option value="Paleo">Paleo</option>
+                                <option value="Gluten-Free">Gluten-Free</option>
+                                <option value="High Protein">High Protein</option>
+                                <option value="Mediterranean">Mediterranean</option>
+                            </select>
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleGeneratePlan}
-                        disabled={isGenerating}
-                        className="flex items-center gap-2 bg-emerald-500 text-white px-6 py-2 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200/50 disabled:opacity-70 disabled:cursor-not-allowed"
-                    >
-                        {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
-                        {isGenerating ? 'Generating...' : `Generate ${planDuration} Plan`}
-                    </button>
+                    <div className="flex gap-2 w-full xl:w-auto">
+                        {currentPlan?.plan_data?.shopping_list && currentPlan.plan_data.shopping_list.length > 0 && (
+                            <button
+                                onClick={() => setShowShoppingList(true)}
+                                className="flex items-center justify-center gap-2 bg-white text-emerald-600 border border-emerald-200 px-4 py-2 rounded-xl hover:bg-emerald-50 transition-all font-medium py-2"
+                            >
+                                <ShoppingBag className="h-4 w-4" />
+                                Shopping List
+                            </button>
+                        )}
+                        <button
+                            onClick={handleGeneratePlan}
+                            disabled={isGenerating}
+                            className="flex-1 xl:flex-none flex items-center justify-center gap-2 bg-emerald-500 text-white px-6 py-2 rounded-xl hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-200/50 disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calendar className="h-4 w-4" />}
+                            {isGenerating ? 'Generating...' : `Generate ${planDuration} Plan`}
+                        </button>
+                    </div>
                 </section>
+
+                {/* Shopping List Modal */}
+                {showShoppingList && currentPlan?.plan_data?.shopping_list && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col animate-in fade-in zoom-in duration-200">
+                            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+                                <div className="flex items-center gap-2 text-emerald-600">
+                                    <ShoppingBag className="h-5 w-5" />
+                                    <h3 className="font-bold text-lg text-slate-900">Monthly Shopping List</h3>
+                                </div>
+                                <button
+                                    onClick={() => setShowShoppingList(false)}
+                                    className="p-1 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+
+                            <div className="p-4 overflow-y-auto">
+                                <div className="p-4 bg-emerald-50 rounded-xl mb-4 text-sm text-emerald-700">
+                                    This master list covers all ingredients needed for your 28-day monthly plan. Buy in bulk to save costs!
+                                </div>
+                                <ul className="space-y-2">
+                                    {currentPlan.plan_data.shopping_list.map((item, idx) => (
+                                        <li key={idx} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg transition-colors border-b border-slate-50 last:border-0">
+                                            <div className="h-2 w-2 rounded-full bg-emerald-400 shrink-0" />
+                                            <span className="text-slate-700 capitalize">{item}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                                <button
+                                    onClick={() => setShowShoppingList(false)}
+                                    className="w-full py-2.5 bg-slate-900 text-white rounded-xl font-medium hover:bg-slate-800 transition-colors"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Day Navigation (Slider) */}
                 {currentPlan?.plan_data?.days && currentPlan.plan_data.days.length > 1 && (
@@ -298,9 +375,12 @@ export default function DashboardPage() {
                                         protein={parseMacro(meal.protein)}
                                         carbs={parseMacro(meal.carbs)}
                                         fat={parseMacro(meal.fat)}
+                                        description={meal.description}
+                                        ingredients={meal.ingredients}
+                                        instructions={meal.instructions}
                                         onRegenerate={() => { }} // Single regeneration not yet implemented
                                         isLoading={false}
-                                        pantryScore={100} // Default score for AI plans
+                                        pantryScore={planDuration === 'daily' || planDuration === 'weekly' ? 100 : undefined}
                                     />
                                 );
                             })}
