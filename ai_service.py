@@ -248,7 +248,8 @@ Keep responses concise and actionable."""
         dietary_preferences: str = None,
         pantry_ingredients: list = None,
         excluded_ingredients: list = None,
-        included_ingredients: list = None
+        included_ingredients: list = None,
+        workout_preference: str = "Gym"
     ) -> dict:
         """
         Generate a multi-day meal plan based on user profile and duration.
@@ -328,7 +329,7 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
             # We generate the monthly plan in one go if possible, or split if needed. 
             # Trying a 2-week generation that includes the shopping list, then 2x it.
             
-            prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, 14, is_monthly=True, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients)
+            prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, 14, is_monthly=True, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients, workout_preference=workout_preference)
             
             try:
                 response = self.model.generate_content(prompt)
@@ -360,7 +361,8 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
 
 
         # Daily or Weekly (Normal single shot)
-        prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=is_strict_pantry, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients)
+        # Daily or Weekly (Normal single shot)
+        prompt = self._build_prompt(weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=is_strict_pantry, excluded_ingredients=excluded_ingredients, included_ingredients=included_ingredients, workout_preference=workout_preference)
 
         try:
             response = self.model.generate_content(prompt)
@@ -368,7 +370,7 @@ DO NOT suggest recipes requiring other main ingredients. If a recipe is impossib
         except Exception as e:
              return {"error": str(e), "days": []}
 
-    def _build_prompt(self, weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=False, is_monthly=False, excluded_ingredients=None, included_ingredients=None):
+    def _build_prompt(self, weight, target_weight, height, age, gender, activity, bmi, tdee, daily_calories, goal, preferences_str, pantry_str, days_count, is_strict_pantry=False, is_monthly=False, excluded_ingredients=None, included_ingredients=None, workout_preference="Gym"):
         
         system_instruction = ""
         task_instruction = ""
@@ -392,7 +394,27 @@ You MUST prioritize recipes that use these items. Treat them as the core of the 
 You must NOT include them in any recipe. If a recipe usually has them, substitute or omit.
 Check every ingredient list twice. If a forbidden item is found, the plan is invalid.
 """
+            exclusion_str = f"""
+**CRITICAL: The user is ALLERGIC or HATES the following items: {exclusion_list}.**
+You must NOT include them in any recipe. If a recipe usually has them, substitute or omit.
+Check every ingredient list twice. If a forbidden item is found, the plan is invalid.
+"""
 
+        # Build Workout Preference String
+        workout_type_str = ""
+        if workout_preference == "Home":
+            workout_type_str = """
+**HOME WORKOUT (NO GYM):**
+The user is training at HOME with NO EQUIPMENT (or basic household items).
+You MUST generate BODYWEIGHT exercises (Push-ups, Squats, Lunges, Burpees, etc.) or Cardiorespiratory exercises (Running, Jumping Jacks).
+DO NOT suggest machines like Leg Press, Bench Press, or Cable rows.
+"""
+        else:
+             workout_type_str = """
+**GYM WORKOUT:**
+The user has access to a standard GYM.
+You may suggest exercises using Barbells, Dumbbells, Machines, and Cables.
+"""
         if is_strict_pantry and not is_monthly:
             # STRICT MODE (Pantry Chef + Trainer)
             system_instruction = """
@@ -435,12 +457,14 @@ Check every ingredient list twice. If a forbidden item is found, the plan is inv
             You are a professional Nutritionist AND Personal Trainer. 
             **YOUR MISSION:** Create a perfectly synchronized Diet & Fitness plan.
             
+            **WORKOUT PREFERENCE:** {workout_type_str}
+            
             **BALANCE LOGIC:**
             1. **Workout Days:** Increase calorie intake (especially carbs/protein) slightly to fuel performance.
             2. **Rest Days:** Lower calorie intake slightly to focus on recovery and fat loss (if applicable).
             3. **Net Calculation:** Ensure (Total In - Burned) meets the user's deficit/surplus goal.
             """
-            task_instruction = f"Create a {days_count}-day plan where Diet and Fitness are perfectly aligned."
+            task_instruction = f"Create a {days_count}-day plan where Diet and Fitness are perfectly aligned ({workout_preference})."
 
         return f"""{system_instruction}
 

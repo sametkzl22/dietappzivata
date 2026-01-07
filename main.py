@@ -1126,7 +1126,8 @@ def generate_diet_plan_endpoint(
         dietary_preferences=request.dietary_preferences,
         pantry_ingredients=pantry_ingredients,
         excluded_ingredients=request.excluded_ingredients,
-        included_ingredients=request.included_ingredients
+        included_ingredients=request.included_ingredients,
+        workout_preference=request.workout_preference
     )
     
     if "error" in plan_result:

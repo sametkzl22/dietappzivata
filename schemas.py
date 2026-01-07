@@ -326,6 +326,7 @@ class PlanGenerateRequest(BaseModel):
     dietary_preferences: Optional[str] = Field(None, description="Optional dietary preferences")
     excluded_ingredients: List[str] = Field(default=[], description="Ingredients to strictly exclude")
     included_ingredients: List[str] = Field(default=[], description="Ingredients to prioritize (Must-Have)")
+    workout_preference: str = Field("Gym", description="Workout type: 'Gym' or 'Home'")
 
 
 class DayMeal(BaseModel):

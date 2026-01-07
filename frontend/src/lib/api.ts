@@ -578,7 +578,8 @@ export async function generateDietPlan(
     duration: 'daily' | 'weekly' | 'monthly',
     dietary_preferences?: string,
     excluded_ingredients?: string[],
-    included_ingredients?: string[]
+    included_ingredients?: string[],
+    workout_preference?: string
 ): Promise<DietPlan> {
     const url = `${API_BASE_URL}/plans/generate`;
     const response = await fetchWithAuth(url, {
@@ -588,7 +589,8 @@ export async function generateDietPlan(
             duration,
             dietary_preferences,
             excluded_ingredients: excluded_ingredients || [],
-            included_ingredients: included_ingredients || []
+            included_ingredients: included_ingredients || [],
+            workout_preference: workout_preference || 'Gym'
         }),
     });
 
