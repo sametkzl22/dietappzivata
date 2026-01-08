@@ -810,6 +810,22 @@ export async function getUsersForMessaging(): Promise<UserSimple[]> {
     }
 }
 
+export async function getAllUsers(): Promise<UserSimple[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/users`);
+        if (!response.ok) return [];
+        const users = await response.json();
+        // Map to UserSimple format
+        return users.map((u: { id: number; name: string | null; email: string }) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email
+        }));
+    } catch {
+        return [];
+    }
+}
+
 
 // ============================================================================
 // Events API Functions

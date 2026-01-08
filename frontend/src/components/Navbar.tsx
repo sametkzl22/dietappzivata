@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import { getStoredUser, logout, isAuthenticated, User } from '@/lib/api';
 import {
     Menu, X, Home, LayoutDashboard, ChefHat, User as UserIcon,
-    Shield, LogIn, UserPlus, LogOut, ChevronDown, Sparkles, Moon, Sun
+    Shield, LogIn, UserPlus, LogOut, ChevronDown, Sparkles, Moon, Sun,
+    MessageSquare, Calendar, Mail
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -83,6 +84,8 @@ export default function Navbar() {
     const userLinks = [
         { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { href: '/pantry', label: 'My Pantry', icon: ChefHat },
+        { href: '/forum', label: 'Forum', icon: MessageSquare },
+        { href: '/events', label: 'Events', icon: Calendar },
         { href: '/profile', label: 'Profile', icon: UserIcon },
     ];
 
@@ -144,6 +147,19 @@ export default function Navbar() {
                         >
                             {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
                         </button>
+
+                        {/* Messages Button */}
+                        {user && (
+                            <Link
+                                href="/messages"
+                                className="relative p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                aria-label="Messages"
+                            >
+                                <Mail className="h-5 w-5" />
+                                {/* Unread indicator - can be wired to real data */}
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                            </Link>
+                        )}
 
                         {user ? (
                             <div className="relative">

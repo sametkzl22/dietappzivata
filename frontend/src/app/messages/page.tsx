@@ -54,11 +54,12 @@ export default function MessagesPage() {
             setUser(currentUser);
             setConversations(inbox);
 
-            // If admin, fetch all users for messaging
-            if (currentUser.is_superuser) {
-                const users = await api.getUsersForMessaging();
-                setAllUsers(users);
-            }
+            // Fetch all users for new conversation (admin uses getUsersForMessaging, others use getAllUsers)
+            const users = currentUser.is_superuser
+                ? await api.getUsersForMessaging()
+                : await api.getAllUsers();
+            // Filter out current user from the list
+            setAllUsers(users.filter(u => u.id !== currentUser.id));
 
             // Check for user ID in URL params
             const userIdParam = searchParams.get('userId');
@@ -151,15 +152,14 @@ export default function MessagesPage() {
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Direct conversations</p>
                             </div>
                         </div>
-                        {user?.is_superuser && (
-                            <button
-                                onClick={() => setShowUserPicker(!showUserPicker)}
-                                className="flex items-center gap-2 bg-indigo-500 text-white px-4 py-2 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200/50 dark:shadow-indigo-900/30 font-medium text-sm"
-                            >
-                                <Users className="h-4 w-4" />
-                                Message User
-                            </button>
-                        )}
+                        {/* New Conversation Button */}
+                        <button
+                            onClick={() => setShowUserPicker(!showUserPicker)}
+                            className="flex items-center gap-2 bg-indigo-500 text-white px-4 py-2 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200/50 dark:shadow-indigo-900/30 font-medium text-sm"
+                        >
+                            <Users className="h-4 w-4" />
+                            New Chat
+                        </button>
                     </div>
                 </div>
             </header>
@@ -177,20 +177,24 @@ export default function MessagesPage() {
                                 <h2 className="font-semibold text-slate-900 dark:text-white">Conversations</h2>
                             </div>
 
-                            {/* Admin User Picker */}
-                            {showUserPicker && user?.is_superuser && (
+                            {/* User Picker for New Conversation */}
+                            {showUserPicker && (
                                 <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-indigo-50/50 dark:bg-indigo-900/10">
                                     <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-2">Select a user to message:</p>
                                     <div className="max-h-40 overflow-y-auto space-y-1">
-                                        {allUsers.map(u => (
-                                            <button
-                                                key={u.id}
-                                                onClick={() => selectConversation(u.id, u.name)}
-                                                className="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-sm text-slate-700 dark:text-slate-300 transition-colors"
-                                            >
-                                                {u.name || u.email}
-                                            </button>
-                                        ))}
+                                        {allUsers.length === 0 ? (
+                                            <p className="text-xs text-slate-500 px-2">No users found</p>
+                                        ) : (
+                                            allUsers.map(u => (
+                                                <button
+                                                    key={u.id}
+                                                    onClick={() => selectConversation(u.id, u.name)}
+                                                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/30 text-sm text-slate-700 dark:text-slate-300 transition-colors"
+                                                >
+                                                    {u.name || u.email}
+                                                </button>
+                                            ))
+                                        )}
                                     </div>
                                 </div>
                             )}
