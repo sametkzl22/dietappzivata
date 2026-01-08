@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getStoredUser, isAuthenticated, updateProfile, api, User, setStoredUser, type UserUpdate } from '@/lib/api';
+import { getStoredUser, isAuthenticated, updateProfile, api, User, setStoredUser, type UserUpdate, type FriendUser, type FriendRequest, getFriends, getFriendRequests, acceptFriendRequest, rejectFriendRequest } from '@/lib/api';
 import {
     User as UserIcon, Mail, Ruler, Weight, Activity, Target,
     Calendar, ArrowLeft, Edit2, Save, X, Crown, Sparkles, TrendingUp
@@ -15,6 +15,11 @@ export default function ProfilePage() {
     const [loading, setLoading] = useState(true);
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    // Community Details
+    const [activeTab, setActiveTab] = useState<'profile' | 'community'>('profile');
+    const [friends, setFriends] = useState<FriendUser[]>([]);
+    const [requests, setRequests] = useState<FriendRequest[]>([]);
 
     // Form data matches UserUpdate interface
     const [formData, setFormData] = useState<UserUpdate>({
@@ -48,6 +53,15 @@ export default function ProfilePage() {
             });
             // Update local storage too
             setStoredUser(response.data);
+
+            // Fetch community data
+            const [friendsList, requestsList] = await Promise.all([
+                getFriends(),
+                getFriendRequests()
+            ]);
+            setFriends(friendsList);
+            setRequests(requestsList);
+
         } catch (error) {
             console.error('Failed to fetch user data:', error);
             const storedUser = getStoredUser();
@@ -64,6 +78,23 @@ export default function ProfilePage() {
             }
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleAcceptRequest = async (id: number) => {
+        const success = await acceptFriendRequest(id);
+        if (success) {
+            setRequests(requests.filter(r => r.id !== id));
+            // Refresh friends list
+            const friendsList = await getFriends();
+            setFriends(friendsList);
+        }
+    };
+
+    const handleRejectRequest = async (id: number) => {
+        const success = await rejectFriendRequest(id);
+        if (success) {
+            setRequests(requests.filter(r => r.id !== id));
         }
     };
 
@@ -169,225 +200,344 @@ export default function ProfilePage() {
                     )}
                 </div>
 
-                {/* Profile Card */}
-                <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
-                    {/* Banner */}
-                    <div className="h-32 bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500 relative">
-                        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIxIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L3N2Zz4=')] opacity-50"></div>
-                    </div>
+                {/* Tab Navigation */}
+                <div className="flex items-center gap-2 mb-6 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl w-fit">
+                    <button
+                        onClick={() => setActiveTab('profile')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'profile'
+                            ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                    >
+                        My Profile
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('community')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'community'
+                            ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                    >
+                        My Community
+                        {requests.length > 0 && (
+                            <span className="ml-2 px-1.5 py-0.5 text-xs bg-red-500 text-white rounded-full">
+                                {requests.length}
+                            </span>
+                        )}
+                    </button>
+                </div>
 
-                    {/* Avatar */}
-                    <div className="relative px-6">
-                        <div className="absolute -top-16 left-6">
-                            <div className={`w-32 h-32 rounded-2xl flex items-center justify-center text-white text-4xl font-bold shadow-xl border-4 border-white ${user.is_superuser
-                                ? 'bg-gradient-to-br from-amber-400 to-orange-500'
-                                : 'bg-gradient-to-br from-emerald-400 to-teal-500'
-                                }`}>
-                                {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+                {activeTab === 'profile' ? (
+                    <>
+                        {/* Profile Card */}
+                        <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                            {/* Banner */}
+                            <div className="h-32 bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500 relative">
+                                <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIxIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L3N2Zz4=')] opacity-50"></div>
                             </div>
-                            {user.is_superuser && (
-                                <div className="absolute -top-2 -right-2 w-8 h-8 bg-amber-400 rounded-full flex items-center justify-center shadow-lg">
-                                    <Crown className="h-4 w-4 text-white" />
+
+                            {/* Avatar */}
+                            <div className="relative px-6">
+                                <div className="absolute -top-16 left-6">
+                                    <div className={`w-32 h-32 rounded-2xl flex items-center justify-center text-white text-4xl font-bold shadow-xl border-4 border-white ${user.is_superuser
+                                        ? 'bg-gradient-to-br from-amber-400 to-orange-500'
+                                        : 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                                        }`}>
+                                        {user.name?.[0]?.toUpperCase() || user.email[0].toUpperCase()}
+                                    </div>
+                                    {user.is_superuser && (
+                                        <div className="absolute -top-2 -right-2 w-8 h-8 bg-amber-400 rounded-full flex items-center justify-center shadow-lg">
+                                            <Crown className="h-4 w-4 text-white" />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Info Section */}
+                            <div className="pt-20 px-6 pb-6">
+                                <div className="flex items-center gap-3 mb-2">
+                                    {editing ? (
+                                        <input
+                                            type="text"
+                                            value={formData.name || ''}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                            className="text-2xl font-bold text-slate-900 border border-slate-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                            placeholder="Your name"
+                                        />
+                                    ) : (
+                                        <h1 className="text-2xl font-bold text-slate-900">{user.name || 'No name set'}</h1>
+                                    )}
+                                    {user.is_superuser && (
+                                        <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium flex items-center gap-1">
+                                            <Sparkles className="h-3 w-3" />
+                                            Admin
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-slate-500 flex items-center gap-2">
+                                    <Mail className="h-4 w-4" />
+                                    {user.email}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Main Stats Grid */}
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+                            {/* Weight */}
+                            <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                                        <Weight className="h-5 w-5 text-purple-600" />
+                                    </div>
+                                    <span className="text-sm text-slate-500">Current Weight</span>
+                                </div>
+                                {editing ? (
+                                    <input
+                                        type="number"
+                                        value={formData.weight_kg}
+                                        onChange={(e) => setFormData({ ...formData, weight_kg: parseFloat(e.target.value) || 0 })}
+                                        className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                ) : (
+                                    <p className="text-2xl font-bold text-slate-900">{user.weight_kg} <span className="text-sm font-normal text-slate-500">kg</span></p>
+                                )}
+                            </div>
+
+                            {/* Target Weight */}
+                            <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                        <TrendingUp className="h-5 w-5 text-indigo-600" />
+                                    </div>
+                                    <span className="text-sm text-slate-500">Target Weight</span>
+                                </div>
+                                {editing ? (
+                                    <input
+                                        type="number"
+                                        value={formData.target_weight_kg || formData.weight_kg}
+                                        onChange={(e) => setFormData({ ...formData, target_weight_kg: parseFloat(e.target.value) || 0 })}
+                                        className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                ) : (
+                                    <p className="text-2xl font-bold text-slate-900">
+                                        {(user as any).target_weight_kg || user.weight_kg}
+                                        <span className="text-sm font-normal text-slate-500"> kg</span>
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Height */}
+                            <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                                        <Ruler className="h-5 w-5 text-blue-600" />
+                                    </div>
+                                    <span className="text-sm text-slate-500">Height</span>
+                                </div>
+                                {editing ? (
+                                    <input
+                                        type="number"
+                                        value={formData.height_cm}
+                                        onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || 0 })}
+                                        className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                ) : (
+                                    <p className="text-2xl font-bold text-slate-900">{user.height_cm} <span className="text-sm font-normal text-slate-500">cm</span></p>
+                                )}
+                            </div>
+
+                            {/* BMI */}
+                            <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+                                        <Target className="h-5 w-5 text-emerald-600" />
+                                    </div>
+                                    <span className="text-sm text-slate-500">BMI</span>
+                                </div>
+                                <p className="text-2xl font-bold text-slate-900">{bmi || '-'}</p>
+                                {bmiCategory && (
+                                    <p className={`text-xs font-medium ${bmiCategory.color}`}>{bmiCategory.label}</p>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Additional Details Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                            {/* Activity Level */}
+                            <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                                        <Activity className="h-5 w-5 text-orange-600" />
+                                    </div>
+                                    <h3 className="font-semibold text-slate-900">Activity Level</h3>
+                                </div>
+                                {editing ? (
+                                    <select
+                                        value={formData.activity_level}
+                                        onChange={(e) => setFormData({ ...formData, activity_level: e.target.value })}
+                                        className="w-full border border-slate-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    >
+                                        <option value="sedentary">Sedentary (little or no exercise)</option>
+                                        <option value="light">Lightly Active (1-3 days/week)</option>
+                                        <option value="moderate">Moderately Active (3-5 days/week)</option>
+                                        <option value="very">Very Active (6-7 days/week)</option>
+                                        <option value="athlete">Athlete / Extremely Active</option>
+                                    </select>
+                                ) : (
+                                    <div>
+                                        <p className="text-lg font-medium text-slate-900">{getActivityLabel(user.activity_level)}</p>
+                                        <p className="text-sm text-slate-500 mt-1">
+                                            Base for TDEE calculation
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Age and Other Details */}
+                            <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
+                                <div className="flex items-center gap-3 mb-4">
+                                    <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center">
+                                        <Calendar className="h-5 w-5 text-rose-600" />
+                                    </div>
+                                    <h3 className="font-semibold text-slate-900">Personal Details</h3>
+                                </div>
+                                <div className="flex items-center justify-between py-2 border-b border-slate-50">
+                                    <span className="text-slate-500">Age</span>
+                                    {editing ? (
+                                        <input
+                                            type="number"
+                                            value={formData.age}
+                                            onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
+                                            className="text-right font-medium text-slate-900 border border-slate-200 rounded px-2 w-20"
+                                        />
+                                    ) : (
+                                        <span className="font-medium text-slate-900">{user.age} years</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between py-2">
+                                    <span className="text-slate-500">Gender</span>
+                                    <span className="font-medium text-slate-900 capitalize">{user.gender}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Quick Actions */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                            <Link
+                                href="/pantry"
+                                className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-100 hover:border-emerald-200 hover:shadow-emerald-100/50 transition-all group"
+                            >
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-200/50">
+                                    <span className="text-2xl">🥗</span>
+                                </div>
+                                <div>
+                                    <h4 className="font-semibold text-slate-900 group-hover:text-emerald-600 transition-colors">My Pantry</h4>
+                                    <p className="text-sm text-slate-500">Manage your ingredients</p>
+                                </div>
+                            </Link>
+                            <Link
+                                href="/onboarding"
+                                className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-100 hover:border-emerald-200 hover:shadow-emerald-100/50 transition-all group"
+                            >
+                                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg shadow-violet-200/50">
+                                    <span className="text-2xl">⚙️</span>
+                                </div>
+                                <div>
+                                    <h4 className="font-semibold text-slate-900 group-hover:text-violet-600 transition-colors">Update Preferences</h4>
+                                    <p className="text-sm text-slate-500">Dietary needs & goals</p>
+                                </div>
+                            </Link>
+                        </div>
+                    </>
+                ) : (
+                    <div className="space-y-6">
+                        {/* Friend Requests */}
+                        {requests.length > 0 && (
+                            <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                                <h3 className="font-semibold text-lg mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                                    Pending Requests
+                                    <span className="text-slate-400 text-sm font-normal">({requests.length})</span>
+                                </h3>
+                                <div className="space-y-3">
+                                    {requests.map((req) => (
+                                        <div key={req.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                                                    <span className="font-bold text-slate-600 dark:text-slate-300">
+                                                        {req.sender_name?.[0].toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium text-slate-900 dark:text-white">{req.sender_name}</p>
+                                                    <p className="text-xs text-slate-500">Wants to be friends</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleRejectRequest(req.id)}
+                                                    className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                                                >
+                                                    Reject
+                                                </button>
+                                                <button
+                                                    onClick={() => handleAcceptRequest(req.id)}
+                                                    className="px-3 py-1.5 text-xs font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600 transition-colors"
+                                                >
+                                                    Accept
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Friends List */}
+                        <div className="bg-white dark:bg-slate-900 rounded-xl p-6 shadow-sm border border-slate-100 dark:border-slate-800">
+                            <h3 className="font-semibold text-lg mb-4 text-slate-900 dark:text-white flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                My Friends
+                                <span className="text-slate-400 text-sm font-normal">({friends.length})</span>
+                            </h3>
+
+                            {friends.length === 0 ? (
+                                <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                                    <UserIcon className="h-12 w-12 mx-auto mb-2 text-slate-300 opacity-50" />
+                                    <p>You haven't added any friends yet.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {friends.map((friend) => (
+                                        <div key={friend.user_id} className="flex items-center justify-between p-4 border border-slate-100 dark:border-slate-800 rounded-xl hover:shadow-md transition-shadow">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
+                                                    <span className="text-lg font-bold text-emerald-700">
+                                                        {friend.user_name?.[0].toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium text-slate-900 dark:text-white">{friend.user_name}</p>
+                                                    <p className="text-xs text-slate-500 flex items-center gap-1">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                                        Friend
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <Link
+                                                href={`/messages?userId=${friend.user_id}`}
+                                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                                title="Send Message"
+                                            >
+                                                <Mail className="h-5 w-5" />
+                                            </Link>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>
                     </div>
-
-                    {/* Info Section */}
-                    <div className="pt-20 px-6 pb-6">
-                        <div className="flex items-center gap-3 mb-2">
-                            {editing ? (
-                                <input
-                                    type="text"
-                                    value={formData.name || ''}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    className="text-2xl font-bold text-slate-900 border border-slate-200 rounded-lg px-3 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                    placeholder="Your name"
-                                />
-                            ) : (
-                                <h1 className="text-2xl font-bold text-slate-900">{user.name || 'No name set'}</h1>
-                            )}
-                            {user.is_superuser && (
-                                <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-700 text-xs font-medium flex items-center gap-1">
-                                    <Sparkles className="h-3 w-3" />
-                                    Admin
-                                </span>
-                            )}
-                        </div>
-                        <p className="text-slate-500 flex items-center gap-2">
-                            <Mail className="h-4 w-4" />
-                            {user.email}
-                        </p>
-                    </div>
-                </div>
-
-                {/* Main Stats Grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                    {/* Weight */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                                <Weight className="h-5 w-5 text-purple-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">Current Weight</span>
-                        </div>
-                        {editing ? (
-                            <input
-                                type="number"
-                                value={formData.weight_kg}
-                                onChange={(e) => setFormData({ ...formData, weight_kg: parseFloat(e.target.value) || 0 })}
-                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                        ) : (
-                            <p className="text-2xl font-bold text-slate-900">{user.weight_kg} <span className="text-sm font-normal text-slate-500">kg</span></p>
-                        )}
-                    </div>
-
-                    {/* Target Weight */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                                <TrendingUp className="h-5 w-5 text-indigo-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">Target Weight</span>
-                        </div>
-                        {editing ? (
-                            <input
-                                type="number"
-                                value={formData.target_weight_kg || formData.weight_kg}
-                                onChange={(e) => setFormData({ ...formData, target_weight_kg: parseFloat(e.target.value) || 0 })}
-                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                        ) : (
-                            <p className="text-2xl font-bold text-slate-900">
-                                {(user as any).target_weight_kg || user.weight_kg}
-                                <span className="text-sm font-normal text-slate-500"> kg</span>
-                            </p>
-                        )}
-                    </div>
-
-                    {/* Height */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                <Ruler className="h-5 w-5 text-blue-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">Height</span>
-                        </div>
-                        {editing ? (
-                            <input
-                                type="number"
-                                value={formData.height_cm}
-                                onChange={(e) => setFormData({ ...formData, height_cm: parseFloat(e.target.value) || 0 })}
-                                className="text-2xl font-bold text-slate-900 w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            />
-                        ) : (
-                            <p className="text-2xl font-bold text-slate-900">{user.height_cm} <span className="text-sm font-normal text-slate-500">cm</span></p>
-                        )}
-                    </div>
-
-                    {/* BMI */}
-                    <div className="bg-white rounded-xl p-4 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-2">
-                            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-                                <Target className="h-5 w-5 text-emerald-600" />
-                            </div>
-                            <span className="text-sm text-slate-500">BMI</span>
-                        </div>
-                        <p className="text-2xl font-bold text-slate-900">{bmi || '-'}</p>
-                        {bmiCategory && (
-                            <p className={`text-xs font-medium ${bmiCategory.color}`}>{bmiCategory.label}</p>
-                        )}
-                    </div>
-                </div>
-
-                {/* Additional Details Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                    {/* Activity Level */}
-                    <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-                                <Activity className="h-5 w-5 text-orange-600" />
-                            </div>
-                            <h3 className="font-semibold text-slate-900">Activity Level</h3>
-                        </div>
-                        {editing ? (
-                            <select
-                                value={formData.activity_level}
-                                onChange={(e) => setFormData({ ...formData, activity_level: e.target.value })}
-                                className="w-full border border-slate-200 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                            >
-                                <option value="sedentary">Sedentary (little or no exercise)</option>
-                                <option value="light">Lightly Active (1-3 days/week)</option>
-                                <option value="moderate">Moderately Active (3-5 days/week)</option>
-                                <option value="very">Very Active (6-7 days/week)</option>
-                                <option value="athlete">Athlete / Extremely Active</option>
-                            </select>
-                        ) : (
-                            <div>
-                                <p className="text-lg font-medium text-slate-900">{getActivityLabel(user.activity_level)}</p>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    Base for TDEE calculation
-                                </p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Age and Other Details */}
-                    <div className="bg-white rounded-xl p-6 shadow-lg shadow-slate-200/50 border border-slate-100">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-lg bg-rose-100 flex items-center justify-center">
-                                <Calendar className="h-5 w-5 text-rose-600" />
-                            </div>
-                            <h3 className="font-semibold text-slate-900">Personal Details</h3>
-                        </div>
-                        <div className="flex items-center justify-between py-2 border-b border-slate-50">
-                            <span className="text-slate-500">Age</span>
-                            {editing ? (
-                                <input
-                                    type="number"
-                                    value={formData.age}
-                                    onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
-                                    className="text-right font-medium text-slate-900 border border-slate-200 rounded px-2 w-20"
-                                />
-                            ) : (
-                                <span className="font-medium text-slate-900">{user.age} years</span>
-                            )}
-                        </div>
-                        <div className="flex items-center justify-between py-2">
-                            <span className="text-slate-500">Gender</span>
-                            <span className="font-medium text-slate-900 capitalize">{user.gender}</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Quick Actions */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                    <Link
-                        href="/pantry"
-                        className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-100 hover:border-emerald-200 hover:shadow-emerald-100/50 transition-all group"
-                    >
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-400 to-teal-500 flex items-center justify-center shadow-lg shadow-emerald-200/50">
-                            <span className="text-2xl">🥗</span>
-                        </div>
-                        <div>
-                            <h4 className="font-semibold text-slate-900 group-hover:text-emerald-600 transition-colors">My Pantry</h4>
-                            <p className="text-sm text-slate-500">Manage your ingredients</p>
-                        </div>
-                    </Link>
-                    <Link
-                        href="/onboarding"
-                        className="flex items-center gap-4 p-4 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-100 hover:border-emerald-200 hover:shadow-emerald-100/50 transition-all group"
-                    >
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-400 to-purple-500 flex items-center justify-center shadow-lg shadow-violet-200/50">
-                            <span className="text-2xl">⚙️</span>
-                        </div>
-                        <div>
-                            <h4 className="font-semibold text-slate-900 group-hover:text-violet-600 transition-colors">Update Preferences</h4>
-                            <p className="text-sm text-slate-500">Dietary needs & goals</p>
-                        </div>
-                    </Link>
-                </div>
+                )}
             </div>
         </div>
     );

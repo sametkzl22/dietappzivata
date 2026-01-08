@@ -997,7 +997,7 @@ export async function acceptFriendRequest(requestId: number): Promise<FriendRequ
     }
 }
 
-export async function getPendingRequests(): Promise<FriendRequest[]> {
+export async function getFriendRequests(): Promise<FriendRequest[]> {
     try {
         const response = await fetchWithAuth(`${API_BASE_URL}/friends/requests`);
         if (!response.ok) return [];
@@ -1048,3 +1048,18 @@ export async function unfriendUser(userId: number): Promise<boolean> {
         return false;
     }
 }
+
+// ============================================================================
+// Event Management Wrappers
+// ============================================================================
+
+export async function deleteEvent(eventId: number): Promise<boolean> {
+    const response = await api.delete(`/events/${eventId}`);
+    return response.data;
+
+}
+
+
+// ============================================================================
+// End of API
+// ============================================================================

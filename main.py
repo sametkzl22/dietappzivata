@@ -1879,6 +1879,43 @@ def join_event(
 
 
 @app.delete(
+    "/events/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Community Events"],
+    summary="Delete an event (Admin only)"
+)
+def delete_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """**Admin Only** - Delete a community event."""
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can delete events"
+        )
+    
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Optional: Delete associated image file if exists
+    if event.image_url:
+        try:
+            # Extract filename from URL
+            filename = event.image_url.split("/")[-1]
+            file_path = UPLOADS_DIR / filename
+            if file_path.exists():
+                file_path.unlink()
+        except Exception:
+            pass  # Ignore file deletion errors
+            
+    db.delete(event)
+    db.commit()
+
+
+@app.delete(
     "/events/{event_id}/leave",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["Events"],

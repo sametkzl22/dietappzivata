@@ -15,7 +15,8 @@ import {
     User,
     Info,
     RefreshCw,
-    UploadCloud
+    UploadCloud,
+    Trash2
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { type User as UserType, type CommunityEvent } from '@/lib/api';
@@ -162,6 +163,16 @@ export default function EventsPage() {
             toast.error('Failed to leave event');
         }
         setJoiningEventId(null);
+    };
+
+    const handleDeleteEvent = async (eventId: number) => {
+        const success = await api.deleteEvent(eventId);
+        if (success) {
+            setEvents(events.filter(e => e.id !== eventId));
+            toast.success('Event deleted successfully');
+        } else {
+            toast.error('Failed to delete event');
+        }
     };
 
     const isUserJoined = (event: CommunityEvent) => {
@@ -320,13 +331,30 @@ export default function EventsPage() {
                                                     )}
 
                                                     <div className="flex items-center justify-between mt-4">
-                                                        <button
-                                                            onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
-                                                            className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-700"
-                                                        >
-                                                            <Users className="h-4 w-4" />
-                                                            {event.participant_count} Going
-                                                        </button>
+                                                        <div className="flex items-center gap-3">
+                                                            <button
+                                                                onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
+                                                                className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-700"
+                                                            >
+                                                                <Users className="h-4 w-4" />
+                                                                {event.participant_count} Going
+                                                            </button>
+
+                                                            {user?.is_superuser && (
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (confirm('Are you sure you want to delete this event?')) {
+                                                                            handleDeleteEvent(event.id);
+                                                                        }
+                                                                    }}
+                                                                    className="flex items-center gap-1 text-sm text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                    Delete
+                                                                </button>
+                                                            )}
+                                                        </div>
 
                                                         {joined ? (
                                                             <button
