@@ -881,22 +881,43 @@ export async function createEvent(
     description: string,
     date: string,
     location: string,
-    imageUrl?: string
+    imageFile?: File | null
 ): Promise<CommunityEvent | null> {
     try {
-        const response = await fetchWithAuth(`${API_BASE_URL}/events`, {
+        const token = getToken();
+        if (!token) {
+            throw new Error('Not authenticated');
+        }
+
+        const formData = new FormData();
+        formData.append('title', title);
+        if (description) {
+            formData.append('description', description);
+        }
+        formData.append('date', date);
+        if (location) {
+            formData.append('location', location);
+        }
+        if (imageFile) {
+            formData.append('file', imageFile);
+        }
+
+        const response = await fetch(`${API_BASE_URL}/events`, {
             method: 'POST',
-            body: JSON.stringify({
-                title,
-                description,
-                date,
-                location,
-                image_url: imageUrl || null
-            }),
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                // Do NOT set Content-Type - browser will set it with boundary for multipart
+            },
+            body: formData,
         });
-        if (!response.ok) return null;
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to create event');
+        }
         return response.json();
-    } catch {
+    } catch (error) {
+        console.error('Create event error:', error);
         return null;
     }
 }

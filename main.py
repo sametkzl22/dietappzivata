@@ -14,11 +14,15 @@ Docs: http://localhost:8000/docs
 """
 
 import os
-from datetime import timedelta
+import shutil
+import uuid
+from datetime import timedelta, datetime
+from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
@@ -93,6 +97,13 @@ A comprehensive backend API for diet and fitness tracking.
 
 # Initialize AI Coach with API key from environment
 ai_coach = GeminiCoach(api_key=os.getenv("GEMINI_API_KEY"))
+
+# Ensure static/uploads directory exists
+UPLOADS_DIR = Path("static/uploads")
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Mount static files for serving uploaded images
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS Middleware Configuration
 app.add_middleware(
@@ -1631,24 +1642,62 @@ def get_users_for_messaging(
     tags=["Events"],
     summary="Create an event (Admin only)"
 )
-def create_event(
-    event: EventCreate,
+async def create_event(
+    request: Request,
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    date: str = Form(...),
+    location: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new community event. Admin only."""
+    """Create a new community event with optional image upload. Admin only."""
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=403,
             detail="Only administrators can create events"
         )
     
+    # Handle image upload
+    image_url = None
+    if file and file.filename:
+        # Generate unique filename
+        file_ext = Path(file.filename).suffix.lower()
+        if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Allowed: jpg, jpeg, png, gif, webp"
+            )
+        
+        unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+        file_path = UPLOADS_DIR / unique_filename
+        
+        # Save file
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Generate full URL for the image
+        image_url = f"{request.base_url}static/uploads/{unique_filename}"
+    
+    # Parse date string to datetime
+    try:
+        event_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+    except ValueError:
+        try:
+            event_date = datetime.strptime(date, "%Y-%m-%dT%H:%M")
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM)"
+            )
+    
     db_event = Event(
-        title=event.title,
-        description=event.description,
-        date=event.date,
-        location=event.location,
-        image_url=event.image_url,
+        title=title,
+        description=description,
+        date=event_date,
+        location=location,
+        image_url=image_url,
         created_by_id=current_user.id
     )
     db.add(db_event)

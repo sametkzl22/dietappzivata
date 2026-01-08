@@ -15,7 +15,7 @@ import {
     User,
     Info,
     RefreshCw,
-    Image
+    UploadCloud
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { type User as UserType, type CommunityEvent } from '@/lib/api';
@@ -33,7 +33,8 @@ export default function EventsPage() {
     const [newDescription, setNewDescription] = useState('');
     const [newDate, setNewDate] = useState('');
     const [newLocation, setNewLocation] = useState('');
-    const [newImageUrl, setNewImageUrl] = useState('');
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [isCreating, setIsCreating] = useState(false);
 
     // Join state
@@ -87,20 +88,34 @@ export default function EventsPage() {
         if (!newTitle.trim() || !newDate) return;
         setIsCreating(true);
 
-        const newEvent = await api.createEvent(newTitle, newDescription, newDate, newLocation, newImageUrl || undefined);
+        const newEvent = await api.createEvent(newTitle, newDescription, newDate, newLocation, selectedFile);
         if (newEvent) {
             setEvents([newEvent, ...events]);
             setNewTitle('');
             setNewDescription('');
             setNewDate('');
             setNewLocation('');
-            setNewImageUrl('');
+            setSelectedFile(null);
+            setImagePreview(null);
             setShowCreateModal(false);
             toast.success('Event created successfully!');
         } else {
             toast.error('Failed to create event');
         }
         setIsCreating(false);
+    };
+
+    const handleFileSelect = (file: File | null) => {
+        setSelectedFile(file);
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        } else {
+            setImagePreview(null);
+        }
     };
 
     const handleJoinEvent = async (eventId: number) => {
@@ -173,15 +188,7 @@ export default function EventsPage() {
         };
     };
 
-    const isValidImageUrl = (url: string) => {
-        if (!url) return false;
-        try {
-            new URL(url);
-            return url.match(/\.(jpg|jpeg|png|gif|webp)$/i) !== null || url.includes('unsplash.com') || url.includes('pexels.com') || url.includes('images.google.com');
-        } catch {
-            return false;
-        }
-    };
+
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 pt-20">
@@ -453,30 +460,47 @@ export default function EventsPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-                                    <Image className="h-4 w-4 inline mr-1" />
-                                    Cover Image URL
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                    Cover Image
                                 </label>
-                                <input
-                                    type="url"
-                                    placeholder="https://example.com/image.jpg"
-                                    value={newImageUrl}
-                                    onChange={(e) => setNewImageUrl(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500"
-                                />
-                                {/* Image Preview */}
-                                {newImageUrl && isValidImageUrl(newImageUrl) && (
-                                    <div className="mt-2 relative h-32 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
-                                        <img
-                                            src={newImageUrl}
-                                            alt="Preview"
-                                            className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).style.display = 'none';
-                                            }}
-                                        />
-                                    </div>
-                                )}
+                                <div
+                                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all relative
+                                        ${selectedFile
+                                            ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                                            : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                >
+                                    <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/gif,image/webp"
+                                        onChange={(e) => handleFileSelect(e.target.files?.[0] || null)}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                    {imagePreview ? (
+                                        <div className="space-y-3">
+                                            <img
+                                                src={imagePreview}
+                                                alt="Preview"
+                                                className="mx-auto h-24 rounded-lg object-cover shadow-md"
+                                            />
+                                            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium truncate">
+                                                {selectedFile?.name}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); handleFileSelect(null); }}
+                                                className="text-xs text-red-500 hover:text-red-700 font-medium"
+                                            >
+                                                Remove image
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center text-slate-500 dark:text-slate-400">
+                                            <UploadCloud className="h-10 w-10 mb-2 text-slate-400" />
+                                            <span className="text-sm font-medium">Click to upload cover image</span>
+                                            <span className="text-xs mt-1 text-slate-400">JPG, PNG, GIF, WebP up to 5MB</span>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
