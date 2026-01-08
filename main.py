@@ -1732,9 +1732,14 @@ async def create_event(
         image_url=image_url,
         created_by_id=current_user.id
     )
-    db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
+    
+    try:
+        db.add(db_event)
+        db.commit()
+        db.refresh(db_event)
+    except Exception as e:
+        print(f"[DATABASE ERROR] Failed to create event: {e}")
+        raise HTTPException(status_code=500, detail="Database error while creating event.")
     
     print(f"[EVENT] Event created successfully: ID={db_event.id}")
     return {

@@ -21,3 +21,9 @@ __pycache__/
 # Next.js
 frontend/.next/
 frontend/node_modules/
+
+# Generated Scripts
+create_admin.py
+
+# User Uploads
+static/uploads/
