@@ -98,12 +98,19 @@ A comprehensive backend API for diet and fitness tracking.
 # Initialize AI Coach with API key from environment
 ai_coach = GeminiCoach(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Ensure static/uploads directory exists
-UPLOADS_DIR = Path("static/uploads")
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+# Setup proper base directory for file uploads
+BASE_DIR = Path(__file__).resolve().parent
+UPLOADS_DIR = BASE_DIR / "static" / "uploads"
+
+# Ensure static/uploads directory exists with proper permissions
+try:
+    UPLOADS_DIR.mkdir(parents=True, exist_ok=True, mode=0o755)
+    print(f"[STARTUP] Upload directory ready: {UPLOADS_DIR}")
+except Exception as e:
+    print(f"[STARTUP ERROR] Failed to create upload directory: {e}")
 
 # Mount static files for serving uploaded images
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 # CORS Middleware Configuration
 app.add_middleware(
@@ -1653,45 +1660,70 @@ async def create_event(
     db: Session = Depends(get_db)
 ):
     """Create a new community event with optional image upload. Admin only."""
+    print(f"[EVENT] Received event creation request: title='{title}', date='{date}', has_file={file is not None}")
+    
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=403,
             detail="Only administrators can create events"
         )
     
-    # Handle image upload
+    # Handle image upload with robust error handling
     image_url = None
     if file and file.filename:
-        # Generate unique filename
-        file_ext = Path(file.filename).suffix.lower()
-        if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+        try:
+            # Generate unique filename
+            file_ext = Path(file.filename).suffix.lower()
+            print(f"[EVENT] Processing file upload: {file.filename}, extension: {file_ext}")
+            
+            if file_ext not in [".jpg", ".jpeg", ".png", ".gif", ".webp"]:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid file type. Allowed: jpg, jpeg, png, gif, webp"
+                )
+            
+            unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+            file_path = UPLOADS_DIR / unique_filename
+            
+            # Ensure directory exists before saving
+            UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+            
+            # Save file with explicit error handling
+            print(f"[EVENT] Saving file to: {file_path}")
+            contents = await file.read()
+            with open(file_path, "wb") as buffer:
+                buffer.write(contents)
+            
+            # Generate full URL for the image
+            base_url = str(request.base_url).rstrip('/')
+            image_url = f"{base_url}/static/uploads/{unique_filename}"
+            print(f"[EVENT] File saved successfully. URL: {image_url}")
+            
+        except HTTPException:
+            raise  # Re-raise HTTP exceptions
+        except Exception as e:
+            print(f"[EVENT ERROR] Failed to save file: {e}")
             raise HTTPException(
-                status_code=400,
-                detail="Invalid file type. Allowed: jpg, jpeg, png, gif, webp"
+                status_code=500,
+                detail=f"Failed to upload image: {str(e)}"
             )
-        
-        unique_filename = f"{uuid.uuid4().hex}{file_ext}"
-        file_path = UPLOADS_DIR / unique_filename
-        
-        # Save file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        
-        # Generate full URL for the image
-        image_url = f"{request.base_url}static/uploads/{unique_filename}"
     
     # Parse date string to datetime
     try:
+        # Try ISO format first
         event_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
     except ValueError:
         try:
+            # Try datetime-local format
             event_date = datetime.strptime(date, "%Y-%m-%dT%H:%M")
         except ValueError:
+            print(f"[EVENT ERROR] Invalid date format: {date}")
             raise HTTPException(
                 status_code=400,
                 detail="Invalid date format. Use ISO format (YYYY-MM-DDTHH:MM)"
             )
     
+    print(f"[EVENT] Creating event in database...")
     db_event = Event(
         title=title,
         description=description,
@@ -1704,6 +1736,7 @@ async def create_event(
     db.commit()
     db.refresh(db_event)
     
+    print(f"[EVENT] Event created successfully: ID={db_event.id}")
     return {
         "id": db_event.id,
         "title": db_event.title,

@@ -894,12 +894,22 @@ export async function createEvent(
         if (description) {
             formData.append('description', description);
         }
-        formData.append('date', date);
+
+        // Ensure date is in strict ISO format
+        const isoDate = new Date(date).toISOString();
+        formData.append('date', isoDate);
+
         if (location) {
             formData.append('location', location);
         }
         if (imageFile) {
             formData.append('file', imageFile);
+        }
+
+        // Debug: Log FormData entries
+        console.log('[API] Creating event with data:');
+        for (const [key, value] of formData.entries()) {
+            console.log(`- ${key}:`, value instanceof File ? `File(${value.name})` : value);
         }
 
         const response = await fetch(`${API_BASE_URL}/events`, {
