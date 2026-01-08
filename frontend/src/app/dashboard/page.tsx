@@ -183,7 +183,7 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50 dark:from-slate-900 dark:via-slate-950 dark:to-teal-950 transition-colors duration-300">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
             {/* Header */}
             <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg sticky top-0 z-30 transition-colors duration-300">
                 <div className="mx-auto max-w-7xl px-6 py-4">
@@ -233,7 +233,7 @@ export default function DashboardPage() {
                     {isLoading ? (
                         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             {[1, 2, 3, 4].map((i) => (
-                                <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                                <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800/50" />
                             ))}
                         </div>
                     ) : (
@@ -394,7 +394,7 @@ export default function DashboardPage() {
                                         <button onClick={confirmDelete} disabled={isResetting} className="p-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
                                             {isResetting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
                                         </button>
-                                        <button onClick={() => setIsConfirmingDelete(false)} disabled={isResetting} className="p-1.5 bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors">
+                                        <button onClick={() => setIsConfirmingDelete(false)} disabled={isResetting} className="p-1.5 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
                                             <X className="h-3 w-3" />
                                         </button>
                                     </div>
@@ -463,7 +463,7 @@ export default function DashboardPage() {
                                     </ul>
                                 </div>
 
-                                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-b-2xl">
+                                <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 rounded-b-2xl">
                                     <button
                                         onClick={() => setShowShoppingList(false)}
                                         className="w-full py-2.5 bg-slate-900 dark:bg-slate-700 text-white rounded-xl font-medium hover:bg-slate-800 dark:hover:bg-slate-600 transition-colors"
@@ -575,7 +575,7 @@ export default function DashboardPage() {
                                                 ))}
                                             </div>
                                         ) : (
-                                            <div className="p-6 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-xl text-center text-slate-500 dark:text-slate-400 italic">
+                                            <div className="p-6 bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 rounded-xl text-center text-slate-500 dark:text-slate-400 italic">
                                                 <p className="font-medium">Rest Day / Active Recovery</p>
                                                 <p className="text-xs mt-1">Go for a light walk or stretch.</p>
                                             </div>

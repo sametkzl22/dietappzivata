@@ -386,3 +386,124 @@ class DietPlanListResponse(BaseModel):
     """Response containing a list of diet plans."""
     plans: List[DietPlanResponse]
 
+
+# ============================================================================
+# Community & Social Schemas
+# ============================================================================
+
+# Forum Schemas
+class PostCreate(BaseModel):
+    """Schema for creating a forum post."""
+    title: str = Field(..., min_length=1, max_length=200, description="Post title")
+    content: str = Field(..., min_length=1, max_length=10000, description="Post content")
+
+
+class CommentCreate(BaseModel):
+    """Schema for creating a comment on a post."""
+    content: str = Field(..., min_length=1, max_length=2000, description="Comment content")
+
+
+class CommentResponse(BaseModel):
+    """Schema for comment response."""
+    id: int
+    post_id: int
+    user_id: int
+    user_name: Optional[str] = None
+    content: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PostResponse(BaseModel):
+    """Schema for forum post response."""
+    id: int
+    user_id: int
+    user_name: Optional[str] = None
+    title: str
+    content: str
+    created_at: datetime
+    comments_count: int = 0
+    comments: List[CommentResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# Message Schemas
+class MessageCreate(BaseModel):
+    """Schema for sending a direct message."""
+    receiver_id: int = Field(..., description="ID of the user to send message to")
+    content: str = Field(..., min_length=1, max_length=5000, description="Message content")
+
+
+class MessageResponse(BaseModel):
+    """Schema for message response."""
+    id: int
+    sender_id: int
+    sender_name: Optional[str] = None
+    receiver_id: int
+    receiver_name: Optional[str] = None
+    content: str
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationResponse(BaseModel):
+    """Schema for conversation summary in inbox."""
+    other_user_id: int
+    other_user_name: Optional[str] = None
+    last_message: str
+    last_message_time: datetime
+    unread_count: int = 0
+
+
+# Event Schemas
+class EventCreate(BaseModel):
+    """Schema for creating an event (Admin only)."""
+    title: str = Field(..., min_length=1, max_length=200, description="Event title")
+    description: Optional[str] = Field(None, max_length=5000, description="Event description")
+    date: datetime = Field(..., description="Event date and time")
+    location: Optional[str] = Field(None, max_length=500, description="Event location")
+
+
+class ParticipantResponse(BaseModel):
+    """Schema for event participant."""
+    user_id: int
+    user_name: Optional[str] = None
+    joined_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EventResponse(BaseModel):
+    """Schema for event response."""
+    id: int
+    title: str
+    description: Optional[str] = None
+    date: datetime
+    location: Optional[str] = None
+    created_by_id: int
+    created_by_name: Optional[str] = None
+    participant_count: int = 0
+    participants: List[ParticipantResponse] = []
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# User list for messaging
+class UserSimple(BaseModel):
+    """Simplified user info for messaging."""
+    id: int
+    name: Optional[str] = None
+    email: str
+
+    class Config:
+        from_attributes = True

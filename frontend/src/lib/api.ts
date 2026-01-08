@@ -630,3 +630,257 @@ export async function getDietPlanHistory(): Promise<DietPlan[]> {
         return [];
     }
 }
+
+
+// ============================================================================
+// Community & Social Types
+// ============================================================================
+
+export interface ForumPost {
+    id: number;
+    user_id: number;
+    user_name: string | null;
+    title: string;
+    content: string;
+    created_at: string;
+    comments_count: number;
+    comments: ForumComment[];
+}
+
+export interface ForumComment {
+    id: number;
+    post_id: number;
+    user_id: number;
+    user_name: string | null;
+    content: string;
+    created_at: string;
+}
+
+export interface DirectMessage {
+    id: number;
+    sender_id: number;
+    sender_name: string | null;
+    receiver_id: number;
+    receiver_name: string | null;
+    content: string;
+    is_read: boolean;
+    created_at: string;
+}
+
+export interface Conversation {
+    other_user_id: number;
+    other_user_name: string | null;
+    last_message: string;
+    last_message_time: string;
+    unread_count: number;
+}
+
+export interface CommunityEvent {
+    id: number;
+    title: string;
+    description: string | null;
+    date: string;
+    location: string | null;
+    created_by_id: number;
+    created_by_name: string | null;
+    participant_count: number;
+    participants: EventParticipant[];
+    created_at: string;
+}
+
+export interface EventParticipant {
+    user_id: number;
+    user_name: string | null;
+    joined_at: string;
+}
+
+export interface UserSimple {
+    id: number;
+    name: string | null;
+    email: string;
+}
+
+
+// ============================================================================
+// Forum API Functions
+// ============================================================================
+
+export async function getForumPosts(): Promise<ForumPost[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/forum/posts`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function getForumPost(postId: number): Promise<ForumPost | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/forum/posts/${postId}`);
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function createForumPost(title: string, content: string): Promise<ForumPost | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/forum/posts`, {
+            method: 'POST',
+            body: JSON.stringify({ title, content }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function deleteForumPost(postId: number): Promise<boolean> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/forum/posts/${postId}`, {
+            method: 'DELETE',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function addComment(postId: number, content: string): Promise<ForumComment | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/forum/posts/${postId}/comments`, {
+            method: 'POST',
+            body: JSON.stringify({ content }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+
+// ============================================================================
+// Messages API Functions
+// ============================================================================
+
+export async function sendMessage(receiverId: number, content: string): Promise<DirectMessage | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/messages/send`, {
+            method: 'POST',
+            body: JSON.stringify({ receiver_id: receiverId, content }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function getInbox(): Promise<Conversation[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/messages/inbox`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function getConversation(userId: number): Promise<DirectMessage[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/messages/conversation/${userId}`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function getUsersForMessaging(): Promise<UserSimple[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/messages/users`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+
+// ============================================================================
+// Events API Functions
+// ============================================================================
+
+export async function getEvents(): Promise<CommunityEvent[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function getEvent(eventId: number): Promise<CommunityEvent | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events/${eventId}`);
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function createEvent(
+    title: string,
+    description: string,
+    date: string,
+    location: string
+): Promise<CommunityEvent | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events`, {
+            method: 'POST',
+            body: JSON.stringify({ title, description, date, location }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function joinEvent(eventId: number): Promise<boolean> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events/${eventId}/join`, {
+            method: 'POST',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function leaveEvent(eventId: number): Promise<boolean> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events/${eventId}/leave`, {
+            method: 'DELETE',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function getEventParticipants(eventId: number): Promise<EventParticipant[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/events/${eventId}/participants`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}

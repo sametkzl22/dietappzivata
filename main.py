@@ -26,7 +26,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from database import get_db, init_db
-from models import User, Recipe, Ingredient, Pantry, RecipeIngredient, ActivityLevel, MealType, DietPlan
+from models import (
+    User, Recipe, Ingredient, Pantry, RecipeIngredient, 
+    ActivityLevel, MealType, DietPlan,
+    ForumPost, ForumComment, Message, Event, EventParticipant
+)
 from schemas import (
     UserCreate, UserUpdate, UserResponse, UserLogin, HealthMetrics,
     Token,
@@ -37,7 +41,11 @@ from schemas import (
     ChatRequest, ChatResponse,
     SuggestRecipeRequest, AIRecipeResponse,
     PlanGenerateRequest, DietPlanResponse, DietPlanListResponse,
-    PlanDuration
+    PlanDuration,
+    # Community & Social schemas
+    PostCreate, PostResponse, CommentCreate, CommentResponse,
+    MessageCreate, MessageResponse, ConversationResponse,
+    EventCreate, EventResponse, ParticipantResponse, UserSimple
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
@@ -1236,6 +1244,552 @@ def get_plan_history(
     return {"plans": plans}
 
 
+# ============================================================================
+# Community & Social Endpoints - Forum
+# ============================================================================
+
+@app.get(
+    "/forum/posts",
+    response_model=List[PostResponse],
+    tags=["Forum"],
+    summary="List all forum posts"
+)
+def list_forum_posts(
+    skip: int = 0,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all forum posts, newest first."""
+    posts = db.query(ForumPost).order_by(ForumPost.created_at.desc()).offset(skip).limit(limit).all()
+    
+    result = []
+    for post in posts:
+        result.append({
+            "id": post.id,
+            "user_id": post.user_id,
+            "user_name": post.user.name if post.user else None,
+            "title": post.title,
+            "content": post.content,
+            "created_at": post.created_at,
+            "comments_count": len(post.comments),
+            "comments": []
+        })
+    return result
+
+
+@app.post(
+    "/forum/posts",
+    response_model=PostResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Forum"],
+    summary="Create a forum post"
+)
+def create_forum_post(
+    post: PostCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new forum post."""
+    db_post = ForumPost(
+        user_id=current_user.id,
+        title=post.title,
+        content=post.content
+    )
+    db.add(db_post)
+    db.commit()
+    db.refresh(db_post)
+    
+    return {
+        "id": db_post.id,
+        "user_id": db_post.user_id,
+        "user_name": current_user.name,
+        "title": db_post.title,
+        "content": db_post.content,
+        "created_at": db_post.created_at,
+        "comments_count": 0,
+        "comments": []
+    }
+
+
+@app.get(
+    "/forum/posts/{post_id}",
+    response_model=PostResponse,
+    tags=["Forum"],
+    summary="Get a specific forum post with comments"
+)
+def get_forum_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a forum post with all its comments."""
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    comments = [
+        {
+            "id": c.id,
+            "post_id": c.post_id,
+            "user_id": c.user_id,
+            "user_name": c.user.name if c.user else None,
+            "content": c.content,
+            "created_at": c.created_at
+        }
+        for c in post.comments
+    ]
+    
+    return {
+        "id": post.id,
+        "user_id": post.user_id,
+        "user_name": post.user.name if post.user else None,
+        "title": post.title,
+        "content": post.content,
+        "created_at": post.created_at,
+        "comments_count": len(comments),
+        "comments": comments
+    }
+
+
+@app.delete(
+    "/forum/posts/{post_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Forum"],
+    summary="Delete a forum post"
+)
+def delete_forum_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a forum post. Only the owner or an admin can delete."""
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    # CRITICAL: Permission check - owner OR admin only
+    if post.user_id != current_user.id and not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="You can only delete your own posts"
+        )
+    
+    db.delete(post)
+    db.commit()
+
+
+@app.post(
+    "/forum/posts/{post_id}/comments",
+    response_model=CommentResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Forum"],
+    summary="Add a comment to a post"
+)
+def add_comment(
+    post_id: int,
+    comment: CommentCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a comment to a forum post."""
+    post = db.query(ForumPost).filter(ForumPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    
+    db_comment = ForumComment(
+        post_id=post_id,
+        user_id=current_user.id,
+        content=comment.content
+    )
+    db.add(db_comment)
+    db.commit()
+    db.refresh(db_comment)
+    
+    return {
+        "id": db_comment.id,
+        "post_id": db_comment.post_id,
+        "user_id": db_comment.user_id,
+        "user_name": current_user.name,
+        "content": db_comment.content,
+        "created_at": db_comment.created_at
+    }
+
+
+# ============================================================================
+# Community & Social Endpoints - Direct Messaging
+# ============================================================================
+
+@app.post(
+    "/messages/send",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Messages"],
+    summary="Send a direct message"
+)
+def send_message(
+    message: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Send a direct message to another user."""
+    # Verify receiver exists
+    receiver = db.query(User).filter(User.id == message.receiver_id).first()
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    
+    # Prevent self-messaging
+    if message.receiver_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot send message to yourself")
+    
+    db_message = Message(
+        sender_id=current_user.id,
+        receiver_id=message.receiver_id,
+        content=message.content
+    )
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+    
+    return {
+        "id": db_message.id,
+        "sender_id": db_message.sender_id,
+        "sender_name": current_user.name,
+        "receiver_id": db_message.receiver_id,
+        "receiver_name": receiver.name,
+        "content": db_message.content,
+        "is_read": db_message.is_read,
+        "created_at": db_message.created_at
+    }
+
+
+@app.get(
+    "/messages/inbox",
+    response_model=List[ConversationResponse],
+    tags=["Messages"],
+    summary="Get inbox conversations"
+)
+def get_inbox(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all conversations for the current user, grouped by other user."""
+    from sqlalchemy import or_, func, case
+    
+    # Get all messages involving current user
+    messages = db.query(Message).filter(
+        or_(
+            Message.sender_id == current_user.id,
+            Message.receiver_id == current_user.id
+        )
+    ).order_by(Message.created_at.desc()).all()
+    
+    # Group by conversation partner
+    conversations = {}
+    for msg in messages:
+        other_id = msg.receiver_id if msg.sender_id == current_user.id else msg.sender_id
+        
+        if other_id not in conversations:
+            other_user = db.query(User).filter(User.id == other_id).first()
+            unread = db.query(func.count(Message.id)).filter(
+                Message.sender_id == other_id,
+                Message.receiver_id == current_user.id,
+                Message.is_read == False
+            ).scalar()
+            
+            conversations[other_id] = {
+                "other_user_id": other_id,
+                "other_user_name": other_user.name if other_user else None,
+                "last_message": msg.content[:100],
+                "last_message_time": msg.created_at,
+                "unread_count": unread
+            }
+    
+    return list(conversations.values())
+
+
+@app.get(
+    "/messages/conversation/{user_id}",
+    response_model=List[MessageResponse],
+    tags=["Messages"],
+    summary="Get conversation with a specific user"
+)
+def get_conversation(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all messages between current user and specified user."""
+    from sqlalchemy import or_, and_
+    
+    messages = db.query(Message).filter(
+        or_(
+            and_(Message.sender_id == current_user.id, Message.receiver_id == user_id),
+            and_(Message.sender_id == user_id, Message.receiver_id == current_user.id)
+        )
+    ).order_by(Message.created_at.asc()).all()
+    
+    # Mark received messages as read
+    db.query(Message).filter(
+        Message.sender_id == user_id,
+        Message.receiver_id == current_user.id,
+        Message.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+    
+    result = []
+    for msg in messages:
+        sender = db.query(User).filter(User.id == msg.sender_id).first()
+        receiver = db.query(User).filter(User.id == msg.receiver_id).first()
+        result.append({
+            "id": msg.id,
+            "sender_id": msg.sender_id,
+            "sender_name": sender.name if sender else None,
+            "receiver_id": msg.receiver_id,
+            "receiver_name": receiver.name if receiver else None,
+            "content": msg.content,
+            "is_read": msg.is_read,
+            "created_at": msg.created_at
+        })
+    
+    return result
+
+
+@app.get(
+    "/messages/users",
+    response_model=List[UserSimple],
+    tags=["Messages"],
+    summary="Get list of users for messaging (Admin only)"
+)
+def get_users_for_messaging(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of all users. Admins can message anyone."""
+    if not current_user.is_superuser:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    users = db.query(User).filter(User.id != current_user.id).all()
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in users]
+
+
+# ============================================================================
+# Community & Social Endpoints - Events
+# ============================================================================
+
+@app.post(
+    "/events",
+    response_model=EventResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Events"],
+    summary="Create an event (Admin only)"
+)
+def create_event(
+    event: EventCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new community event. Admin only."""
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="Only administrators can create events"
+        )
+    
+    db_event = Event(
+        title=event.title,
+        description=event.description,
+        date=event.date,
+        location=event.location,
+        created_by_id=current_user.id
+    )
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    
+    return {
+        "id": db_event.id,
+        "title": db_event.title,
+        "description": db_event.description,
+        "date": db_event.date,
+        "location": db_event.location,
+        "created_by_id": db_event.created_by_id,
+        "created_by_name": current_user.name,
+        "participant_count": 0,
+        "participants": [],
+        "created_at": db_event.created_at
+    }
+
+
+@app.get(
+    "/events",
+    response_model=List[EventResponse],
+    tags=["Events"],
+    summary="List upcoming events"
+)
+def list_events(
+    skip: int = 0,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all upcoming events."""
+    from datetime import datetime
+    
+    events = db.query(Event).filter(
+        Event.date >= datetime.utcnow()
+    ).order_by(Event.date.asc()).offset(skip).limit(limit).all()
+    
+    result = []
+    for event in events:
+        participants = [
+            {
+                "user_id": p.user_id,
+                "user_name": p.user.name if p.user else None,
+                "joined_at": p.joined_at
+            }
+            for p in event.participants
+        ]
+        result.append({
+            "id": event.id,
+            "title": event.title,
+            "description": event.description,
+            "date": event.date,
+            "location": event.location,
+            "created_by_id": event.created_by_id,
+            "created_by_name": event.created_by.name if event.created_by else None,
+            "participant_count": len(participants),
+            "participants": participants,
+            "created_at": event.created_at
+        })
+    
+    return result
+
+
+@app.get(
+    "/events/{event_id}",
+    response_model=EventResponse,
+    tags=["Events"],
+    summary="Get event details"
+)
+def get_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific event with participant list."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    participants = [
+        {
+            "user_id": p.user_id,
+            "user_name": p.user.name if p.user else None,
+            "joined_at": p.joined_at
+        }
+        for p in event.participants
+    ]
+    
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "date": event.date,
+        "location": event.location,
+        "created_by_id": event.created_by_id,
+        "created_by_name": event.created_by.name if event.created_by else None,
+        "participant_count": len(participants),
+        "participants": participants,
+        "created_at": event.created_at
+    }
+
+
+@app.post(
+    "/events/{event_id}/join",
+    response_model=dict,
+    tags=["Events"],
+    summary="Join an event"
+)
+def join_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Join a community event."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    # Check if already joined
+    existing = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event_id,
+        EventParticipant.user_id == current_user.id
+    ).first()
+    
+    if existing:
+        raise HTTPException(status_code=400, detail="Already joined this event")
+    
+    participant = EventParticipant(
+        event_id=event_id,
+        user_id=current_user.id
+    )
+    db.add(participant)
+    db.commit()
+    
+    return {"message": "Successfully joined the event", "event_id": event_id}
+
+
+@app.delete(
+    "/events/{event_id}/leave",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Events"],
+    summary="Leave an event"
+)
+def leave_event(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Leave a community event."""
+    participant = db.query(EventParticipant).filter(
+        EventParticipant.event_id == event_id,
+        EventParticipant.user_id == current_user.id
+    ).first()
+    
+    if not participant:
+        raise HTTPException(status_code=404, detail="You are not a participant")
+    
+    db.delete(participant)
+    db.commit()
+
+
+@app.get(
+    "/events/{event_id}/participants",
+    response_model=List[ParticipantResponse],
+    tags=["Events"],
+    summary="Get event participants"
+)
+def get_event_participants(
+    event_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of participants for an event."""
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return [
+        {
+            "user_id": p.user_id,
+            "user_name": p.user.name if p.user else None,
+            "joined_at": p.joined_at
+        }
+        for p in event.participants
+    ]
+
+
 # Health Check
 # ============================================================================
 
@@ -1246,7 +1800,7 @@ def get_plan_history(
 )
 def health_check():
     """Check if the API is running."""
-    return {"status": "healthy", "version": "1.1.0"}
+    return {"status": "healthy", "version": "1.2.0"}
 
 
 # ============================================================================

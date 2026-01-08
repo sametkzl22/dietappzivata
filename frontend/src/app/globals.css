@@ -2,12 +2,15 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #0f172a;
 }
 
+/* Dark Mode Overrides */
 .dark {
-  --background: #0f172a;
+  --background: #020617;
+  /* Slate-950 (Deep Dark) */
   --foreground: #f8fafc;
+  /* Slate-50 */
 }
 
 @theme inline {
@@ -42,7 +45,7 @@ html {
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #0f172a;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -51,7 +54,7 @@ html {
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #334155;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -59,7 +62,7 @@ html {
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #475569;
 }
 
 /* Line clamp utility */

@@ -69,6 +69,14 @@ class User(Base):
     # Relationships
     pantry_items = relationship("Pantry", back_populates="user")
     diet_plans = relationship("DietPlan", back_populates="user", order_by="desc(DietPlan.created_at)")
+    
+    # Community & Social relationships
+    forum_posts = relationship("ForumPost", back_populates="user", cascade="all, delete-orphan")
+    forum_comments = relationship("ForumComment", back_populates="user", cascade="all, delete-orphan")
+    sent_messages = relationship("Message", foreign_keys="Message.sender_id", back_populates="sender", cascade="all, delete-orphan")
+    received_messages = relationship("Message", foreign_keys="Message.receiver_id", back_populates="receiver", cascade="all, delete-orphan")
+    created_events = relationship("Event", back_populates="created_by", cascade="all, delete-orphan")
+    event_participations = relationship("EventParticipant", back_populates="user", cascade="all, delete-orphan")
 
     def calculate_bmi(self) -> float:
         """
@@ -273,3 +281,94 @@ class DietPlan(Base):
     
     # Relationships
     user = relationship("User", back_populates="diet_plans")
+
+
+# ============================================================================
+# Community & Social Models
+# ============================================================================
+
+class ForumPost(Base):
+    """
+    Forum post created by users for community discussion.
+    """
+    __tablename__ = "forum_posts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="forum_posts")
+    comments = relationship("ForumComment", back_populates="post", cascade="all, delete-orphan")
+
+
+class ForumComment(Base):
+    """
+    Comment on a forum post.
+    """
+    __tablename__ = "forum_comments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("forum_posts.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    post = relationship("ForumPost", back_populates="comments")
+    user = relationship("User", back_populates="forum_comments")
+
+
+class Message(Base):
+    """
+    Direct message between users.
+    """
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(String, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
+    receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")
+
+
+class Event(Base):
+    """
+    Community event created by admins.
+    """
+    __tablename__ = "events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    date = Column(DateTime, nullable=False)
+    location = Column(String, nullable=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    created_by = relationship("User", back_populates="created_events")
+    participants = relationship("EventParticipant", back_populates="event", cascade="all, delete-orphan")
+
+
+class EventParticipant(Base):
+    """
+    Junction table for users participating in events.
+    """
+    __tablename__ = "event_participants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    event = relationship("Event", back_populates="participants")
+    user = relationship("User", back_populates="event_participations")
