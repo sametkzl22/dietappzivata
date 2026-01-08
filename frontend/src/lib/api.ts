@@ -681,6 +681,7 @@ export interface CommunityEvent {
     description: string | null;
     date: string;
     location: string | null;
+    image_url: string | null;
     created_by_id: number;
     created_by_name: string | null;
     participant_count: number;
@@ -698,6 +699,30 @@ export interface UserSimple {
     id: number;
     name: string | null;
     email: string;
+}
+
+export interface FriendRequest {
+    id: number;
+    sender_id: number;
+    sender_name: string | null;
+    receiver_id: number;
+    receiver_name: string | null;
+    status: 'pending' | 'accepted';
+    created_at: string;
+}
+
+export interface FriendUser {
+    user_id: number;
+    user_name: string | null;
+    user_email: string;
+    friendship_id: number;
+    since: string;
+}
+
+export interface FriendshipStatus {
+    status: 'none' | 'pending_sent' | 'pending_received' | 'accepted' | 'self';
+    is_friend: boolean;
+    request_id: number | null;
 }
 
 
@@ -855,12 +880,19 @@ export async function createEvent(
     title: string,
     description: string,
     date: string,
-    location: string
+    location: string,
+    imageUrl?: string
 ): Promise<CommunityEvent | null> {
     try {
         const response = await fetchWithAuth(`${API_BASE_URL}/events`, {
             method: 'POST',
-            body: JSON.stringify({ title, description, date, location }),
+            body: JSON.stringify({
+                title,
+                description,
+                date,
+                location,
+                image_url: imageUrl || null
+            }),
         });
         if (!response.ok) return null;
         return response.json();
@@ -898,5 +930,68 @@ export async function getEventParticipants(eventId: number): Promise<EventPartic
         return response.json();
     } catch {
         return [];
+    }
+}
+
+
+// ============================================================================
+// Friendship API Functions
+// ============================================================================
+
+export async function sendFriendRequest(userId: number): Promise<FriendRequest | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/request/${userId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Failed to send friend request');
+        }
+        return response.json();
+    } catch (error) {
+        console.error('Send friend request error:', error);
+        return null;
+    }
+}
+
+export async function acceptFriendRequest(requestId: number): Promise<FriendRequest | null> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/accept/${requestId}`, {
+            method: 'POST',
+        });
+        if (!response.ok) return null;
+        return response.json();
+    } catch {
+        return null;
+    }
+}
+
+export async function getPendingRequests(): Promise<FriendRequest[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/requests`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function getFriends(): Promise<FriendUser[]> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends`);
+        if (!response.ok) return [];
+        return response.json();
+    } catch {
+        return [];
+    }
+}
+
+export async function checkFriendship(userId: number): Promise<FriendshipStatus> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/check/${userId}`);
+        if (!response.ok) return { status: 'none', is_friend: false, request_id: null };
+        return response.json();
+    } catch {
+        return { status: 'none', is_friend: false, request_id: null };
     }
 }

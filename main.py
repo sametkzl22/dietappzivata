@@ -29,7 +29,8 @@ from database import get_db, init_db
 from models import (
     User, Recipe, Ingredient, Pantry, RecipeIngredient, 
     ActivityLevel, MealType, DietPlan,
-    ForumPost, ForumComment, Message, Event, EventParticipant
+    ForumPost, ForumComment, Message, Event, EventParticipant,
+    Friendship, FriendshipStatus
 )
 from schemas import (
     UserCreate, UserUpdate, UserResponse, UserLogin, HealthMetrics,
@@ -45,7 +46,8 @@ from schemas import (
     # Community & Social schemas
     PostCreate, PostResponse, CommentCreate, CommentResponse,
     MessageCreate, MessageResponse, ConversationResponse,
-    EventCreate, EventResponse, ParticipantResponse, UserSimple
+    EventCreate, EventResponse, ParticipantResponse, UserSimple,
+    FriendRequestCreate, FriendResponse, FriendUserResponse
 )
 from engine import DietEngine
 from ai_service import GeminiCoach
@@ -1432,7 +1434,9 @@ def send_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Send a direct message to another user."""
+    """Send a direct message to another user. Must be friends or admin."""
+    from sqlalchemy import or_, and_
+    
     # Verify receiver exists
     receiver = db.query(User).filter(User.id == message.receiver_id).first()
     if not receiver:
@@ -1441,6 +1445,22 @@ def send_message(
     # Prevent self-messaging
     if message.receiver_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot send message to yourself")
+    
+    # Check if users are friends (unless sender is admin)
+    if not current_user.is_superuser:
+        friendship = db.query(Friendship).filter(
+            Friendship.status == FriendshipStatus.accepted,
+            or_(
+                and_(Friendship.sender_id == current_user.id, Friendship.receiver_id == message.receiver_id),
+                and_(Friendship.sender_id == message.receiver_id, Friendship.receiver_id == current_user.id)
+            )
+        ).first()
+        
+        if not friendship:
+            raise HTTPException(
+                status_code=403, 
+                detail="You can only message friends. Send a friend request first."
+            )
     
     db_message = Message(
         sender_id=current_user.id,
@@ -1565,12 +1585,39 @@ def get_users_for_messaging(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get list of all users. Admins can message anyone."""
-    if not current_user.is_superuser:
-        raise HTTPException(status_code=403, detail="Admin access required")
+    """
+    Get list of users available for messaging.
+    - Admin: All users
+    - Regular user: Only accepted friends
+    """
+    from sqlalchemy import or_, and_
     
-    users = db.query(User).filter(User.id != current_user.id).all()
-    return [{"id": u.id, "name": u.name, "email": u.email} for u in users]
+    if current_user.is_superuser:
+        # Admin can message anyone
+        users = db.query(User).filter(User.id != current_user.id).all()
+        return [{"id": u.id, "name": u.name, "email": u.email} for u in users]
+    
+    # Regular users: only return accepted friends
+    friendships = db.query(Friendship).filter(
+        Friendship.status == FriendshipStatus.accepted,
+        or_(
+            Friendship.sender_id == current_user.id,
+            Friendship.receiver_id == current_user.id
+        )
+    ).all()
+    
+    friend_ids = set()
+    for f in friendships:
+        if f.sender_id == current_user.id:
+            friend_ids.add(f.receiver_id)
+        else:
+            friend_ids.add(f.sender_id)
+    
+    if not friend_ids:
+        return []
+    
+    friends = db.query(User).filter(User.id.in_(friend_ids)).all()
+    return [{"id": u.id, "name": u.name, "email": u.email} for u in friends]
 
 
 # ============================================================================
@@ -1601,6 +1648,7 @@ def create_event(
         description=event.description,
         date=event.date,
         location=event.location,
+        image_url=event.image_url,
         created_by_id=current_user.id
     )
     db.add(db_event)
@@ -1613,6 +1661,7 @@ def create_event(
         "description": db_event.description,
         "date": db_event.date,
         "location": db_event.location,
+        "image_url": db_event.image_url,
         "created_by_id": db_event.created_by_id,
         "created_by_name": current_user.name,
         "participant_count": 0,
@@ -1656,6 +1705,7 @@ def list_events(
             "description": event.description,
             "date": event.date,
             "location": event.location,
+            "image_url": event.image_url,
             "created_by_id": event.created_by_id,
             "created_by_name": event.created_by.name if event.created_by else None,
             "participant_count": len(participants),
@@ -1697,6 +1747,7 @@ def get_event(
         "description": event.description,
         "date": event.date,
         "location": event.location,
+        "image_url": event.image_url,
         "created_by_id": event.created_by_id,
         "created_by_name": event.created_by.name if event.created_by else None,
         "participant_count": len(participants),
@@ -1790,6 +1841,215 @@ def get_event_participants(
     ]
 
 
+# ============================================================================
+# Friendship Endpoints
+# ============================================================================
+
+@app.post(
+    "/friends/request/{user_id}",
+    response_model=FriendResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["Friends"],
+    summary="Send a friend request"
+)
+def send_friend_request(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Send a friend request to another user."""
+    from sqlalchemy import or_, and_
+    
+    # Can't friend yourself
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot send friend request to yourself")
+    
+    # Check if user exists
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if friendship already exists (either direction)
+    existing = db.query(Friendship).filter(
+        or_(
+            and_(Friendship.sender_id == current_user.id, Friendship.receiver_id == user_id),
+            and_(Friendship.sender_id == user_id, Friendship.receiver_id == current_user.id)
+        )
+    ).first()
+    
+    if existing:
+        if existing.status == FriendshipStatus.accepted:
+            raise HTTPException(status_code=400, detail="You are already friends with this user")
+        else:
+            raise HTTPException(status_code=400, detail="A friend request already exists")
+    
+    # Create friend request
+    friend_request = Friendship(
+        sender_id=current_user.id,
+        receiver_id=user_id,
+        status=FriendshipStatus.pending
+    )
+    db.add(friend_request)
+    db.commit()
+    db.refresh(friend_request)
+    
+    return {
+        "id": friend_request.id,
+        "sender_id": friend_request.sender_id,
+        "sender_name": current_user.name,
+        "receiver_id": friend_request.receiver_id,
+        "receiver_name": target_user.name,
+        "status": friend_request.status.value,
+        "created_at": friend_request.created_at
+    }
+
+
+@app.post(
+    "/friends/accept/{request_id}",
+    response_model=FriendResponse,
+    tags=["Friends"],
+    summary="Accept a friend request"
+)
+def accept_friend_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Accept a pending friend request."""
+    friend_request = db.query(Friendship).filter(
+        Friendship.id == request_id,
+        Friendship.receiver_id == current_user.id,
+        Friendship.status == FriendshipStatus.pending
+    ).first()
+    
+    if not friend_request:
+        raise HTTPException(status_code=404, detail="Friend request not found or already handled")
+    
+    friend_request.status = FriendshipStatus.accepted
+    db.commit()
+    db.refresh(friend_request)
+    
+    sender = db.query(User).filter(User.id == friend_request.sender_id).first()
+    
+    return {
+        "id": friend_request.id,
+        "sender_id": friend_request.sender_id,
+        "sender_name": sender.name if sender else None,
+        "receiver_id": friend_request.receiver_id,
+        "receiver_name": current_user.name,
+        "status": friend_request.status.value,
+        "created_at": friend_request.created_at
+    }
+
+
+@app.get(
+    "/friends/requests",
+    response_model=List[FriendResponse],
+    tags=["Friends"],
+    summary="Get pending friend requests"
+)
+def get_pending_requests(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all pending friend requests for the current user."""
+    requests = db.query(Friendship).filter(
+        Friendship.receiver_id == current_user.id,
+        Friendship.status == FriendshipStatus.pending
+    ).order_by(Friendship.created_at.desc()).all()
+    
+    result = []
+    for req in requests:
+        sender = db.query(User).filter(User.id == req.sender_id).first()
+        result.append({
+            "id": req.id,
+            "sender_id": req.sender_id,
+            "sender_name": sender.name if sender else None,
+            "receiver_id": req.receiver_id,
+            "receiver_name": current_user.name,
+            "status": req.status.value,
+            "created_at": req.created_at
+        })
+    
+    return result
+
+
+@app.get(
+    "/friends",
+    response_model=List[FriendUserResponse],
+    tags=["Friends"],
+    summary="Get all friends"
+)
+def get_friends(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of all accepted friends."""
+    from sqlalchemy import or_
+    
+    friendships = db.query(Friendship).filter(
+        Friendship.status == FriendshipStatus.accepted,
+        or_(
+            Friendship.sender_id == current_user.id,
+            Friendship.receiver_id == current_user.id
+        )
+    ).all()
+    
+    result = []
+    for f in friendships:
+        # Get the other user
+        friend_id = f.receiver_id if f.sender_id == current_user.id else f.sender_id
+        friend = db.query(User).filter(User.id == friend_id).first()
+        
+        if friend:
+            result.append({
+                "user_id": friend.id,
+                "user_name": friend.name,
+                "user_email": friend.email,
+                "friendship_id": f.id,
+                "since": f.created_at
+            })
+    
+    return result
+
+
+@app.get(
+    "/friends/check/{user_id}",
+    response_model=dict,
+    tags=["Friends"],
+    summary="Check friendship status with a user"
+)
+def check_friendship(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Check if the current user is friends with another user."""
+    from sqlalchemy import or_, and_
+    
+    if user_id == current_user.id:
+        return {"status": "self", "is_friend": False, "request_id": None}
+    
+    friendship = db.query(Friendship).filter(
+        or_(
+            and_(Friendship.sender_id == current_user.id, Friendship.receiver_id == user_id),
+            and_(Friendship.sender_id == user_id, Friendship.receiver_id == current_user.id)
+        )
+    ).first()
+    
+    if not friendship:
+        return {"status": "none", "is_friend": False, "request_id": None}
+    
+    if friendship.status == FriendshipStatus.accepted:
+        return {"status": "accepted", "is_friend": True, "request_id": friendship.id}
+    
+    # Pending request
+    if friendship.sender_id == current_user.id:
+        return {"status": "pending_sent", "is_friend": False, "request_id": friendship.id}
+    else:
+        return {"status": "pending_received", "is_friend": False, "request_id": friendship.id}
+
+
 # Health Check
 # ============================================================================
 
@@ -1800,7 +2060,7 @@ def get_event_participants(
 )
 def health_check():
     """Check if the API is running."""
-    return {"status": "healthy", "version": "1.2.0"}
+    return {"status": "healthy", "version": "1.3.0"}
 
 
 # ============================================================================

@@ -469,6 +469,7 @@ class EventCreate(BaseModel):
     description: Optional[str] = Field(None, max_length=5000, description="Event description")
     date: datetime = Field(..., description="Event date and time")
     location: Optional[str] = Field(None, max_length=500, description="Event location")
+    image_url: Optional[str] = Field(None, max_length=2000, description="Cover image URL")
 
 
 class ParticipantResponse(BaseModel):
@@ -488,6 +489,7 @@ class EventResponse(BaseModel):
     description: Optional[str] = None
     date: datetime
     location: Optional[str] = None
+    image_url: Optional[str] = None
     created_by_id: int
     created_by_name: Optional[str] = None
     participant_count: int = 0
@@ -504,6 +506,38 @@ class UserSimple(BaseModel):
     id: int
     name: Optional[str] = None
     email: str
+
+    class Config:
+        from_attributes = True
+
+
+# Friendship Schemas
+class FriendRequestCreate(BaseModel):
+    """Schema for sending a friend request."""
+    user_id: int = Field(..., description="ID of the user to send friend request to")
+
+
+class FriendResponse(BaseModel):
+    """Schema for friendship response."""
+    id: int
+    sender_id: int
+    sender_name: Optional[str] = None
+    receiver_id: int
+    receiver_name: Optional[str] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class FriendUserResponse(BaseModel):
+    """Schema for friend user in friends list."""
+    user_id: int
+    user_name: Optional[str] = None
+    user_email: str
+    friendship_id: int
+    since: datetime  # When friendship was accepted
 
     class Config:
         from_attributes = True

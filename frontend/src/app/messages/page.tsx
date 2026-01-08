@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import toast from 'react-hot-toast';
 import {
     Mail,
     Send,
@@ -10,10 +11,13 @@ import {
     Search,
     ChevronLeft,
     Users,
-    RefreshCw
+    RefreshCw,
+    UserPlus,
+    Check,
+    Bell
 } from 'lucide-react';
 import * as api from '@/lib/api';
-import { type User as UserType, type DirectMessage, type Conversation, type UserSimple } from '@/lib/api';
+import { type User as UserType, type DirectMessage, type Conversation, type UserSimple, type FriendRequest } from '@/lib/api';
 
 export default function MessagesPage() {
     const router = useRouter();
@@ -30,9 +34,14 @@ export default function MessagesPage() {
     const [messageText, setMessageText] = useState('');
     const [isSending, setIsSending] = useState(false);
 
-    // User list for new conversation
+    // User list for new conversation (friends only for regular users)
     const [allUsers, setAllUsers] = useState<UserSimple[]>([]);
     const [showUserPicker, setShowUserPicker] = useState(false);
+
+    // Friend requests
+    const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
+    const [showFriendRequests, setShowFriendRequests] = useState(false);
+    const [acceptingRequest, setAcceptingRequest] = useState<number | null>(null);
 
     // Refs for polling and scroll position preservation
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
@@ -44,25 +53,6 @@ export default function MessagesPage() {
         selectedUserIdRef.current = selectedUserId;
     }, [selectedUserId]);
 
-    // Fetch conversation messages (used for polling)
-    const fetchConversation = useCallback(async (userId: number) => {
-        const conversationMessages = await api.getConversation(userId);
-
-        // Only update if there are new messages (avoid unnecessary re-renders)
-        setMessages(prevMessages => {
-            if (conversationMessages.length !== prevMessages.length) {
-                return conversationMessages;
-            }
-            // Check if the last message is different
-            const lastNew = conversationMessages[conversationMessages.length - 1];
-            const lastOld = prevMessages[prevMessages.length - 1];
-            if (lastNew?.id !== lastOld?.id) {
-                return conversationMessages;
-            }
-            return prevMessages;
-        });
-    }, []);
-
     useEffect(() => {
         async function fetchData() {
             if (!api.isAuthenticated()) {
@@ -71,9 +61,10 @@ export default function MessagesPage() {
             }
 
             setIsLoading(true);
-            const [currentUser, inbox] = await Promise.all([
+            const [currentUser, inbox, requests] = await Promise.all([
                 api.getCurrentUser(),
-                api.getInbox()
+                api.getInbox(),
+                api.getPendingRequests()
             ]);
 
             if (!currentUser) {
@@ -83,11 +74,10 @@ export default function MessagesPage() {
 
             setUser(currentUser);
             setConversations(inbox);
+            setPendingRequests(requests);
 
-            // Fetch all users for new conversation
-            const users = currentUser.is_superuser
-                ? await api.getUsersForMessaging()
-                : await api.getAllUsers();
+            // Fetch friends (getUsersForMessaging returns friends for regular users, all for admins)
+            const users = await api.getUsersForMessaging();
             setAllUsers(users.filter(u => u.id !== currentUser.id));
 
             // Check for user ID in URL params
@@ -139,6 +129,10 @@ export default function MessagesPage() {
             // Also refresh inbox
             const inbox = await api.getInbox();
             setConversations(inbox);
+
+            // Refresh pending requests
+            const requests = await api.getPendingRequests();
+            setPendingRequests(requests);
         }, 3000);
 
         return () => {
@@ -209,8 +203,24 @@ export default function MessagesPage() {
         } else {
             // Restore message if send failed
             setMessageText(messageToSend);
+            toast.error('You can only message friends. Send a friend request first.');
         }
         setIsSending(false);
+    };
+
+    const handleAcceptRequest = async (requestId: number) => {
+        setAcceptingRequest(requestId);
+        const result = await api.acceptFriendRequest(requestId);
+        if (result) {
+            setPendingRequests(pendingRequests.filter(r => r.id !== requestId));
+            toast.success('Friend request accepted! You can now message each other.');
+            // Refresh users list
+            const users = await api.getUsersForMessaging();
+            setAllUsers(users.filter(u => u.id !== user?.id));
+        } else {
+            toast.error('Failed to accept friend request');
+        }
+        setAcceptingRequest(null);
     };
 
     const formatTime = (dateString: string) => {
@@ -248,14 +258,28 @@ export default function MessagesPage() {
                                 </p>
                             </div>
                         </div>
-                        {/* New Conversation Button */}
-                        <button
-                            onClick={() => setShowUserPicker(!showUserPicker)}
-                            className="flex items-center gap-2 bg-indigo-500 text-white px-4 py-2 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200/50 dark:shadow-indigo-900/30 font-medium text-sm"
-                        >
-                            <Users className="h-4 w-4" />
-                            New Chat
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {/* Friend Requests Button */}
+                            {pendingRequests.length > 0 && (
+                                <button
+                                    onClick={() => setShowFriendRequests(!showFriendRequests)}
+                                    className="relative flex items-center gap-2 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-3 py-2 rounded-xl hover:bg-amber-200 dark:hover:bg-amber-900/40 transition-colors font-medium text-sm"
+                                >
+                                    <Bell className="h-4 w-4" />
+                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                                        {pendingRequests.length}
+                                    </span>
+                                </button>
+                            )}
+                            {/* New Conversation Button */}
+                            <button
+                                onClick={() => setShowUserPicker(!showUserPicker)}
+                                className="flex items-center gap-2 bg-indigo-500 text-white px-4 py-2 rounded-xl hover:bg-indigo-600 transition-all shadow-lg shadow-indigo-200/50 dark:shadow-indigo-900/30 font-medium text-sm"
+                            >
+                                <Users className="h-4 w-4" />
+                                New Chat
+                            </button>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -273,13 +297,48 @@ export default function MessagesPage() {
                                 <h2 className="font-semibold text-slate-900 dark:text-white">Conversations</h2>
                             </div>
 
+                            {/* Friend Requests Panel */}
+                            {showFriendRequests && pendingRequests.length > 0 && (
+                                <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-amber-50/50 dark:bg-amber-900/10">
+                                    <p className="text-xs font-medium text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-1">
+                                        <UserPlus className="h-3.5 w-3.5" />
+                                        Pending Friend Requests
+                                    </p>
+                                    <div className="space-y-2">
+                                        {pendingRequests.map(req => (
+                                            <div key={req.id} className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-lg p-2 border border-amber-200 dark:border-amber-800">
+                                                <span className="text-sm text-slate-700 dark:text-slate-300 truncate">
+                                                    {req.sender_name || 'Unknown User'}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleAcceptRequest(req.id)}
+                                                    disabled={acceptingRequest === req.id}
+                                                    className="flex items-center gap-1 px-2 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 text-xs font-medium transition-colors"
+                                                >
+                                                    {acceptingRequest === req.id ? (
+                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                    ) : (
+                                                        <Check className="h-3 w-3" />
+                                                    )}
+                                                    Accept
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* User Picker for New Conversation */}
                             {showUserPicker && (
                                 <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-indigo-50/50 dark:bg-indigo-900/10">
-                                    <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-2">Select a user to message:</p>
+                                    <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-2">
+                                        {user?.is_superuser ? 'Select any user:' : 'Select a friend to message:'}
+                                    </p>
                                     <div className="max-h-40 overflow-y-auto space-y-1">
                                         {allUsers.length === 0 ? (
-                                            <p className="text-xs text-slate-500 px-2">No users found</p>
+                                            <p className="text-xs text-slate-500 px-2">
+                                                {user?.is_superuser ? 'No users found' : 'No friends yet. Add friends from the Forum!'}
+                                            </p>
                                         ) : (
                                             allUsers.map(u => (
                                                 <button
@@ -300,7 +359,9 @@ export default function MessagesPage() {
                                     <div className="p-6 text-center text-slate-500 dark:text-slate-400">
                                         <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
                                         <p className="text-sm">No conversations yet</p>
-                                        <p className="text-xs mt-1">Click "New Chat" to start</p>
+                                        <p className="text-xs mt-1">
+                                            {user?.is_superuser ? 'Click "New Chat" to start' : 'Add friends from the Forum or accept requests!'}
+                                        </p>
                                     </div>
                                 ) : (
                                     conversations.map((convo) => (
@@ -348,6 +409,11 @@ export default function MessagesPage() {
                                     <div className="text-center">
                                         <Mail className="h-12 w-12 mx-auto mb-3 opacity-50" />
                                         <p>Select a conversation to start messaging</p>
+                                        {!user?.is_superuser && allUsers.length === 0 && (
+                                            <p className="text-sm mt-2 text-slate-400">
+                                                💡 Tip: Add friends from the Forum to start chatting!
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                             ) : (

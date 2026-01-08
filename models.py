@@ -30,6 +30,12 @@ class MealType(str, enum.Enum):
     snack = "snack"
 
 
+class FriendshipStatus(str, enum.Enum):
+    """Status of a friendship request."""
+    pending = "pending"
+    accepted = "accepted"
+
+
 class User(Base):
     """
     User model with body measurements and health calculation methods.
@@ -77,6 +83,10 @@ class User(Base):
     received_messages = relationship("Message", foreign_keys="Message.receiver_id", back_populates="receiver", cascade="all, delete-orphan")
     created_events = relationship("Event", back_populates="created_by", cascade="all, delete-orphan")
     event_participations = relationship("EventParticipant", back_populates="user", cascade="all, delete-orphan")
+    
+    # Friendship relationships
+    sent_friend_requests = relationship("Friendship", foreign_keys="Friendship.sender_id", back_populates="sender", cascade="all, delete-orphan")
+    received_friend_requests = relationship("Friendship", foreign_keys="Friendship.receiver_id", back_populates="receiver", cascade="all, delete-orphan")
 
     def calculate_bmi(self) -> float:
         """
@@ -350,6 +360,7 @@ class Event(Base):
     description = Column(String, nullable=True)
     date = Column(DateTime, nullable=False)
     location = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)  # Cover image URL
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -372,3 +383,20 @@ class EventParticipant(Base):
     # Relationships
     event = relationship("Event", back_populates="participants")
     user = relationship("User", back_populates="event_participations")
+
+
+class Friendship(Base):
+    """
+    Friendship request and status between users.
+    """
+    __tablename__ = "friendships"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(Enum(FriendshipStatus), default=FriendshipStatus.pending)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    sender = relationship("User", foreign_keys=[sender_id], back_populates="sent_friend_requests")
+    receiver = relationship("User", foreign_keys=[receiver_id], back_populates="received_friend_requests")

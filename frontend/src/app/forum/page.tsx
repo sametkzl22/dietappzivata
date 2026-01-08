@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 import {
     MessageSquare,
     Plus,
@@ -13,10 +14,12 @@ import {
     User,
     X,
     Edit3,
-    RefreshCw
+    RefreshCw,
+    UserPlus,
+    Mail
 } from 'lucide-react';
 import * as api from '@/lib/api';
-import { type User as UserType, type ForumPost, type ForumComment } from '@/lib/api';
+import { type User as UserType, type ForumPost, type ForumComment, type FriendshipStatus } from '@/lib/api';
 
 export default function ForumPage() {
     const router = useRouter();
@@ -36,8 +39,11 @@ export default function ForumPage() {
     const [commentText, setCommentText] = useState('');
     const [isCommenting, setIsCommenting] = useState(false);
 
+    // Friendship states (cache)
+    const [friendshipStatuses, setFriendshipStatuses] = useState<Record<number, FriendshipStatus>>({});
+    const [loadingFriendship, setLoadingFriendship] = useState<number | null>(null);
+
     // Polling state
-    const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
@@ -60,7 +66,16 @@ export default function ForumPage() {
 
             setUser(currentUser);
             setPosts(forumPosts);
-            setLastRefresh(new Date());
+
+            // Fetch friendship status for each unique post author
+            const authorIds = [...new Set(forumPosts.map(p => p.user_id).filter(id => id !== currentUser.id))];
+            const statuses: Record<number, FriendshipStatus> = {};
+            await Promise.all(authorIds.map(async (id) => {
+                const status = await api.checkFriendship(id);
+                statuses[id] = status;
+            }));
+            setFriendshipStatuses(statuses);
+
             setIsLoading(false);
         }
 
@@ -70,7 +85,6 @@ export default function ForumPage() {
         pollingRef.current = setInterval(async () => {
             const forumPosts = await api.getForumPosts();
             setPosts(forumPosts);
-            setLastRefresh(new Date());
         }, 10000);
 
         return () => {
@@ -90,6 +104,9 @@ export default function ForumPage() {
             setNewTitle('');
             setNewContent('');
             setQuickCreateExpanded(false);
+            toast.success('Post created successfully!');
+        } else {
+            toast.error('Failed to create post');
         }
         setIsCreating(false);
     };
@@ -99,6 +116,9 @@ export default function ForumPage() {
         const success = await api.deleteForumPost(postId);
         if (success) {
             setPosts(posts.filter(p => p.id !== postId));
+            toast.success('Post deleted');
+        } else {
+            toast.error('Failed to delete post');
         }
     };
 
@@ -129,8 +149,24 @@ export default function ForumPage() {
             });
             setPosts(posts.map(p => p.id === postId ? { ...p, comments_count: p.comments_count + 1 } : p));
             setCommentText('');
+            toast.success('Comment added!');
         }
         setIsCommenting(false);
+    };
+
+    const handleSendFriendRequest = async (userId: number) => {
+        setLoadingFriendship(userId);
+        const result = await api.sendFriendRequest(userId);
+        if (result) {
+            setFriendshipStatuses(prev => ({
+                ...prev,
+                [userId]: { status: 'pending_sent', is_friend: false, request_id: result.id }
+            }));
+            toast.success('Friend request sent!');
+        } else {
+            toast.error('Failed to send friend request');
+        }
+        setLoadingFriendship(null);
     };
 
     const canDelete = (postUserId: number) => {
@@ -145,6 +181,48 @@ export default function ForumPage() {
             hour: '2-digit',
             minute: '2-digit'
         });
+    };
+
+    const renderFriendButton = (postUserId: number) => {
+        if (!user || postUserId === user.id) return null;
+
+        const friendship = friendshipStatuses[postUserId];
+        const isLoading = loadingFriendship === postUserId;
+
+        if (!friendship || friendship.status === 'none') {
+            return (
+                <button
+                    onClick={() => handleSendFriendRequest(postUserId)}
+                    disabled={isLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-sm font-medium transition-colors"
+                >
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                    Add Friend
+                </button>
+            );
+        }
+
+        if (friendship.status === 'pending_sent') {
+            return (
+                <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-lg text-sm font-medium">
+                    Request Sent
+                </span>
+            );
+        }
+
+        if (friendship.status === 'accepted' || friendship.is_friend) {
+            return (
+                <button
+                    onClick={() => router.push(`/messages?userId=${postUserId}`)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-lg hover:bg-green-100 dark:hover:bg-green-900/30 text-sm font-medium transition-colors"
+                >
+                    <Mail className="h-4 w-4" />
+                    Message
+                </button>
+            );
+        }
+
+        return null;
     };
 
     return (
@@ -264,14 +342,17 @@ export default function ForumPage() {
                                                     <span>{formatDate(post.created_at)}</span>
                                                 </div>
                                             </div>
-                                            {canDelete(post.user_id) && (
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); handleDeletePost(post.id); }}
-                                                    className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </button>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                                {renderFriendButton(post.user_id)}
+                                                {canDelete(post.user_id) && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); handleDeletePost(post.id); }}
+                                                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                )}
+                                            </div>
                                         </div>
 
                                         <p className="mt-3 text-slate-600 dark:text-slate-300 line-clamp-3">

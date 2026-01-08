@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import toast from 'react-hot-toast';
 import {
     Calendar,
     Plus,
@@ -13,7 +14,8 @@ import {
     Clock,
     User,
     Info,
-    RefreshCw
+    RefreshCw,
+    Image
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { type User as UserType, type CommunityEvent } from '@/lib/api';
@@ -31,6 +33,7 @@ export default function EventsPage() {
     const [newDescription, setNewDescription] = useState('');
     const [newDate, setNewDate] = useState('');
     const [newLocation, setNewLocation] = useState('');
+    const [newImageUrl, setNewImageUrl] = useState('');
     const [isCreating, setIsCreating] = useState(false);
 
     // Join state
@@ -84,14 +87,18 @@ export default function EventsPage() {
         if (!newTitle.trim() || !newDate) return;
         setIsCreating(true);
 
-        const newEvent = await api.createEvent(newTitle, newDescription, newDate, newLocation);
+        const newEvent = await api.createEvent(newTitle, newDescription, newDate, newLocation, newImageUrl || undefined);
         if (newEvent) {
             setEvents([newEvent, ...events]);
             setNewTitle('');
             setNewDescription('');
             setNewDate('');
             setNewLocation('');
+            setNewImageUrl('');
             setShowCreateModal(false);
+            toast.success('Event created successfully!');
+        } else {
+            toast.error('Failed to create event');
         }
         setIsCreating(false);
     };
@@ -114,6 +121,9 @@ export default function EventsPage() {
                 }
                 return e;
             }));
+            toast.success('You joined the event!');
+        } else {
+            toast.error('Failed to join event');
         }
         setJoiningEventId(null);
     };
@@ -132,6 +142,9 @@ export default function EventsPage() {
                 }
                 return e;
             }));
+            toast.success('You left the event');
+        } else {
+            toast.error('Failed to leave event');
         }
         setJoiningEventId(null);
     };
@@ -158,6 +171,16 @@ export default function EventsPage() {
             month: date.toLocaleDateString('en-US', { month: 'short' }),
             time: date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
         };
+    };
+
+    const isValidImageUrl = (url: string) => {
+        if (!url) return false;
+        try {
+            new URL(url);
+            return url.match(/\.(jpg|jpeg|png|gif|webp)$/i) !== null || url.includes('unsplash.com') || url.includes('pexels.com') || url.includes('images.google.com');
+        } catch {
+            return false;
+        }
     };
 
     return (
@@ -235,19 +258,46 @@ export default function EventsPage() {
                                             key={event.id}
                                             className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-all"
                                         >
-                                            <div className="flex">
-                                                {/* Date Badge */}
-                                                <div className="w-20 flex-shrink-0 bg-gradient-to-br from-emerald-400 to-teal-500 p-4 flex flex-col items-center justify-center text-white">
-                                                    <span className="text-2xl font-bold">{dateInfo.day}</span>
-                                                    <span className="text-sm font-medium uppercase">{dateInfo.month}</span>
-                                                    <span className="text-xs mt-1 opacity-80">{dateInfo.time}</span>
+                                            {/* Event Cover Image */}
+                                            {event.image_url ? (
+                                                <div className="relative h-40 w-full overflow-hidden">
+                                                    <img
+                                                        src={event.image_url}
+                                                        alt={event.title}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                    />
+                                                    <div className="absolute top-3 left-3 bg-white/90 dark:bg-slate-900/90 backdrop-blur-sm rounded-xl p-2 text-center shadow-lg">
+                                                        <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{dateInfo.day}</span>
+                                                        <span className="block text-xs font-medium text-slate-600 dark:text-slate-400 uppercase">{dateInfo.month}</span>
+                                                    </div>
                                                 </div>
+                                            ) : null}
+
+                                            <div className="flex">
+                                                {/* Date Badge (only if no image) */}
+                                                {!event.image_url && (
+                                                    <div className="w-20 flex-shrink-0 bg-gradient-to-br from-emerald-400 to-teal-500 p-4 flex flex-col items-center justify-center text-white">
+                                                        <span className="text-2xl font-bold">{dateInfo.day}</span>
+                                                        <span className="text-sm font-medium uppercase">{dateInfo.month}</span>
+                                                        <span className="text-xs mt-1 opacity-80">{dateInfo.time}</span>
+                                                    </div>
+                                                )}
 
                                                 {/* Event Content */}
-                                                <div className="flex-1 p-4">
+                                                <div className={`flex-1 p-4 ${event.image_url ? 'w-full' : ''}`}>
                                                     <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                                                         {event.title}
                                                     </h3>
+
+                                                    {event.image_url && (
+                                                        <div className="flex items-center gap-1.5 mt-1 text-sm text-slate-500 dark:text-slate-400">
+                                                            <Clock className="h-4 w-4" />
+                                                            <span>{dateInfo.time}</span>
+                                                        </div>
+                                                    )}
 
                                                     {event.location && (
                                                         <div className="flex items-center gap-1.5 mt-2 text-sm text-slate-500 dark:text-slate-400">
@@ -401,6 +451,32 @@ export default function EventsPage() {
                                         className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500"
                                     />
                                 </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    <Image className="h-4 w-4 inline mr-1" />
+                                    Cover Image URL
+                                </label>
+                                <input
+                                    type="url"
+                                    placeholder="https://example.com/image.jpg"
+                                    value={newImageUrl}
+                                    onChange={(e) => setNewImageUrl(e.target.value)}
+                                    className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500"
+                                />
+                                {/* Image Preview */}
+                                {newImageUrl && isValidImageUrl(newImageUrl) && (
+                                    <div className="mt-2 relative h-32 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700">
+                                        <img
+                                            src={newImageUrl}
+                                            alt="Preview"
+                                            className="w-full h-full object-cover"
+                                            onError={(e) => {
+                                                (e.target as HTMLImageElement).style.display = 'none';
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         </div>
 
