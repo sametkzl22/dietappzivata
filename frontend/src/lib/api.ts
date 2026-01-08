@@ -995,3 +995,25 @@ export async function checkFriendship(userId: number): Promise<FriendshipStatus>
         return { status: 'none', is_friend: false, request_id: null };
     }
 }
+
+export async function rejectFriendRequest(requestId: number): Promise<boolean> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/reject/${requestId}`, {
+            method: 'DELETE',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function unfriendUser(userId: number): Promise<boolean> {
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/friends/${userId}`, {
+            method: 'DELETE',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
+}

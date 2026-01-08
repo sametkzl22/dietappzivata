@@ -7,7 +7,7 @@ import { getStoredUser, logout, isAuthenticated, User } from '@/lib/api';
 import {
     Menu, X, Home, LayoutDashboard, ChefHat, User as UserIcon,
     Shield, LogIn, UserPlus, LogOut, ChevronDown, Sparkles, Moon, Sun,
-    MessageSquare, Calendar, Mail
+    MessageSquare, Calendar, Mail, Users
 } from 'lucide-react';
 
 export default function Navbar() {
@@ -147,6 +147,20 @@ export default function Navbar() {
                         >
                             {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
                         </button>
+
+                        {/* Friends Button */}
+                        {user && (
+                            <Link
+                                href="/messages"
+                                className="relative p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                aria-label="Friends"
+                                title="Friends & Messages"
+                            >
+                                <Users className="h-5 w-5" />
+                                {/* Friend request indicator - mock */}
+                                <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                            </Link>
+                        )}
 
                         {/* Messages Button */}
                         {user && (
@@ -292,6 +306,21 @@ export default function Navbar() {
                             >
                                 <Shield className="h-5 w-5" />
                                 Admin Panel
+                            </Link>
+                        )}
+                        {/* Mobile Messages Link */}
+                        {user && (
+                            <Link
+                                href="/messages"
+                                onClick={() => setIsOpen(false)}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${pathname === '/messages'
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
+                                    : 'text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                                    }`}
+                            >
+                                <Mail className="h-5 w-5" />
+                                Messages
+                                <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                             </Link>
                         )}
 

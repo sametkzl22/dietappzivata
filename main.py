@@ -2050,6 +2050,65 @@ def check_friendship(
         return {"status": "pending_received", "is_friend": False, "request_id": friendship.id}
 
 
+@app.delete(
+    "/friends/reject/{request_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Friends"],
+    summary="Reject or cancel a friend request"
+)
+def reject_friend_request(
+    request_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Reject a pending friend request or cancel a sent request."""
+    from sqlalchemy import or_
+    
+    friend_request = db.query(Friendship).filter(
+        Friendship.id == request_id,
+        Friendship.status == FriendshipStatus.pending,
+        or_(
+            Friendship.receiver_id == current_user.id,  # Rejecting a received request
+            Friendship.sender_id == current_user.id     # Canceling a sent request
+        )
+    ).first()
+    
+    if not friend_request:
+        raise HTTPException(status_code=404, detail="Friend request not found")
+    
+    db.delete(friend_request)
+    db.commit()
+
+
+@app.delete(
+    "/friends/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Friends"],
+    summary="Unfriend a user"
+)
+def unfriend_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove an accepted friendship."""
+    from sqlalchemy import or_, and_
+    
+    friendship = db.query(Friendship).filter(
+        Friendship.status == FriendshipStatus.accepted,
+        or_(
+            and_(Friendship.sender_id == current_user.id, Friendship.receiver_id == user_id),
+            and_(Friendship.sender_id == user_id, Friendship.receiver_id == current_user.id)
+        )
+    ).first()
+    
+    if not friendship:
+        raise HTTPException(status_code=404, detail="Friendship not found")
+    
+    db.delete(friendship)
+    db.commit()
+
+
 # Health Check
 # ============================================================================
 
