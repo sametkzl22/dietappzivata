@@ -64,7 +64,7 @@ export default function MessagesPage() {
             const [currentUser, inbox, requests] = await Promise.all([
                 api.getCurrentUser(),
                 api.getInbox(),
-                api.getPendingRequests()
+                api.getFriendRequests()
             ]);
 
             if (!currentUser) {
@@ -131,7 +131,7 @@ export default function MessagesPage() {
             setConversations(inbox);
 
             // Refresh pending requests
-            const requests = await api.getPendingRequests();
+            const requests = await api.getFriendRequests();
             setPendingRequests(requests);
         }, 3000);
 
