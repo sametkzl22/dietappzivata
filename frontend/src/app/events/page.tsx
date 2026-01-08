@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     Calendar,
@@ -11,7 +11,9 @@ import {
     X,
     Check,
     Clock,
-    User
+    User,
+    Info,
+    RefreshCw
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { type User as UserType, type CommunityEvent } from '@/lib/api';
@@ -33,6 +35,12 @@ export default function EventsPage() {
 
     // Join state
     const [joiningEventId, setJoiningEventId] = useState<number | null>(null);
+
+    // Info banner state
+    const [showInfoBanner, setShowInfoBanner] = useState(true);
+
+    // Polling ref
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
         async function fetchData() {
@@ -58,6 +66,18 @@ export default function EventsPage() {
         }
 
         fetchData();
+
+        // Set up polling every 30 seconds
+        pollingRef.current = setInterval(async () => {
+            const eventsList = await api.getEvents();
+            setEvents(eventsList);
+        }, 30000);
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+            }
+        };
     }, [router]);
 
     const handleCreateEvent = async () => {
@@ -80,7 +100,6 @@ export default function EventsPage() {
         setJoiningEventId(eventId);
         const success = await api.joinEvent(eventId);
         if (success) {
-            // Update local state
             setEvents(events.map(e => {
                 if (e.id === eventId && user) {
                     return {
@@ -142,9 +161,9 @@ export default function EventsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 pt-20">
             {/* Header */}
-            <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg sticky top-0 z-30">
+            <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg fixed top-16 left-0 right-0 z-20">
                 <div className="mx-auto max-w-5xl px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -153,7 +172,10 @@ export default function EventsPage() {
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-slate-900 dark:text-white">Community Events</h1>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Join fitness events near you</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                    <RefreshCw className="h-3 w-3" />
+                                    Auto-refreshes every 30s
+                                </p>
                             </div>
                         </div>
                         {user?.is_superuser && (
@@ -169,128 +191,150 @@ export default function EventsPage() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-5xl px-6 py-8">
+            <main className="mx-auto max-w-5xl px-6 py-8 mt-16">
                 {isLoading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
                     </div>
-                ) : events.length === 0 ? (
-                    <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
-                        <Calendar className="h-12 w-12 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-                        <h3 className="text-lg font-medium text-slate-900 dark:text-white">No upcoming events</h3>
-                        <p className="text-slate-500 dark:text-slate-400 mt-2">
-                            {user?.is_superuser ? 'Create the first event!' : 'Check back later for new events.'}
-                        </p>
-                    </div>
                 ) : (
-                    <div className="grid gap-6 md:grid-cols-2">
-                        {events.map((event) => {
-                            const dateInfo = formatShortDate(event.date);
-                            const joined = isUserJoined(event);
-
-                            return (
-                                <div
-                                    key={event.id}
-                                    className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-all"
-                                >
-                                    <div className="flex">
-                                        {/* Date Badge */}
-                                        <div className="w-20 flex-shrink-0 bg-gradient-to-br from-emerald-400 to-teal-500 p-4 flex flex-col items-center justify-center text-white">
-                                            <span className="text-2xl font-bold">{dateInfo.day}</span>
-                                            <span className="text-sm font-medium uppercase">{dateInfo.month}</span>
-                                            <span className="text-xs mt-1 opacity-80">{dateInfo.time}</span>
-                                        </div>
-
-                                        {/* Event Content */}
-                                        <div className="flex-1 p-4">
-                                            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                                                {event.title}
-                                            </h3>
-
-                                            {event.location && (
-                                                <div className="flex items-center gap-1.5 mt-2 text-sm text-slate-500 dark:text-slate-400">
-                                                    <MapPin className="h-4 w-4" />
-                                                    <span>{event.location}</span>
-                                                </div>
-                                            )}
-
-                                            {event.description && (
-                                                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 line-clamp-2">
-                                                    {event.description}
-                                                </p>
-                                            )}
-
-                                            <div className="flex items-center justify-between mt-4">
-                                                <button
-                                                    onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
-                                                    className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-700"
-                                                >
-                                                    <Users className="h-4 w-4" />
-                                                    {event.participant_count} Going
-                                                </button>
-
-                                                {joined ? (
-                                                    <button
-                                                        onClick={() => handleLeaveEvent(event.id)}
-                                                        disabled={joiningEventId === event.id}
-                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium transition-colors"
-                                                    >
-                                                        {joiningEventId === event.id ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                                        ) : (
-                                                            <Check className="h-4 w-4" />
-                                                        )}
-                                                        Joined
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => handleJoinEvent(event.id)}
-                                                        disabled={joiningEventId === event.id}
-                                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 text-sm font-medium transition-colors disabled:opacity-50"
-                                                    >
-                                                        {joiningEventId === event.id ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin" />
-                                                        ) : (
-                                                            <Plus className="h-4 w-4" />
-                                                        )}
-                                                        Join
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Expanded Participants */}
-                                    {expandedEventId === event.id && (
-                                        <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 p-4">
-                                            <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                                                Who's Going
-                                            </h4>
-                                            {event.participants.length === 0 ? (
-                                                <p className="text-sm text-slate-500 dark:text-slate-400 italic">
-                                                    No one has joined yet. Be the first!
-                                                </p>
-                                            ) : (
-                                                <div className="flex flex-wrap gap-2">
-                                                    {event.participants.map((p) => (
-                                                        <div
-                                                            key={p.user_id}
-                                                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-700 text-sm"
-                                                        >
-                                                            <User className="h-3.5 w-3.5 text-slate-400" />
-                                                            <span className="text-slate-700 dark:text-slate-300">
-                                                                {p.user_name || 'Anonymous'}
-                                                            </span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                    <>
+                        {/* Info Banner for Non-Admins */}
+                        {!user?.is_superuser && showInfoBanner && (
+                            <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 flex items-start gap-3">
+                                <Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                                <div className="flex-1">
+                                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                                        <strong>ℹ️ Community events are curated by our admins.</strong> Join an event to participate and connect with other members!
+                                    </p>
                                 </div>
-                            );
-                        })}
-                    </div>
+                                <button
+                                    onClick={() => setShowInfoBanner(false)}
+                                    className="p-1 hover:bg-blue-100 dark:hover:bg-blue-800/50 rounded-lg transition-colors"
+                                >
+                                    <X className="h-4 w-4 text-blue-500" />
+                                </button>
+                            </div>
+                        )}
+
+                        {events.length === 0 ? (
+                            <div className="text-center py-16 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                <Calendar className="h-12 w-12 mx-auto text-slate-300 dark:text-slate-600 mb-4" />
+                                <h3 className="text-lg font-medium text-slate-900 dark:text-white">No upcoming events</h3>
+                                <p className="text-slate-500 dark:text-slate-400 mt-2">
+                                    {user?.is_superuser ? 'Create the first event!' : 'Check back later for new events.'}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid gap-6 md:grid-cols-2">
+                                {events.map((event) => {
+                                    const dateInfo = formatShortDate(event.date);
+                                    const joined = isUserJoined(event);
+
+                                    return (
+                                        <div
+                                            key={event.id}
+                                            className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden hover:shadow-lg transition-all"
+                                        >
+                                            <div className="flex">
+                                                {/* Date Badge */}
+                                                <div className="w-20 flex-shrink-0 bg-gradient-to-br from-emerald-400 to-teal-500 p-4 flex flex-col items-center justify-center text-white">
+                                                    <span className="text-2xl font-bold">{dateInfo.day}</span>
+                                                    <span className="text-sm font-medium uppercase">{dateInfo.month}</span>
+                                                    <span className="text-xs mt-1 opacity-80">{dateInfo.time}</span>
+                                                </div>
+
+                                                {/* Event Content */}
+                                                <div className="flex-1 p-4">
+                                                    <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                                                        {event.title}
+                                                    </h3>
+
+                                                    {event.location && (
+                                                        <div className="flex items-center gap-1.5 mt-2 text-sm text-slate-500 dark:text-slate-400">
+                                                            <MapPin className="h-4 w-4" />
+                                                            <span>{event.location}</span>
+                                                        </div>
+                                                    )}
+
+                                                    {event.description && (
+                                                        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300 line-clamp-2">
+                                                            {event.description}
+                                                        </p>
+                                                    )}
+
+                                                    <div className="flex items-center justify-between mt-4">
+                                                        <button
+                                                            onClick={() => setExpandedEventId(expandedEventId === event.id ? null : event.id)}
+                                                            className="flex items-center gap-1.5 text-sm text-emerald-600 dark:text-emerald-400 hover:text-emerald-700"
+                                                        >
+                                                            <Users className="h-4 w-4" />
+                                                            {event.participant_count} Going
+                                                        </button>
+
+                                                        {joined ? (
+                                                            <button
+                                                                onClick={() => handleLeaveEvent(event.id)}
+                                                                disabled={joiningEventId === event.id}
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-sm font-medium transition-colors"
+                                                            >
+                                                                {joiningEventId === event.id ? (
+                                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                                ) : (
+                                                                    <Check className="h-4 w-4" />
+                                                                )}
+                                                                Joined
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleJoinEvent(event.id)}
+                                                                disabled={joiningEventId === event.id}
+                                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 text-sm font-medium transition-colors disabled:opacity-50"
+                                                            >
+                                                                {joiningEventId === event.id ? (
+                                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                                ) : (
+                                                                    <Plus className="h-4 w-4" />
+                                                                )}
+                                                                Join
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Expanded Participants */}
+                                            {expandedEventId === event.id && (
+                                                <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 p-4">
+                                                    <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                                                        Who's Going
+                                                    </h4>
+                                                    {event.participants.length === 0 ? (
+                                                        <p className="text-sm text-slate-500 dark:text-slate-400 italic">
+                                                            No one has joined yet. Be the first!
+                                                        </p>
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {event.participants.map((p) => (
+                                                                <div
+                                                                    key={p.user_id}
+                                                                    className="inline-flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-900 rounded-full border border-slate-200 dark:border-slate-700 text-sm"
+                                                                >
+                                                                    <User className="h-3.5 w-3.5 text-slate-400" />
+                                                                    <span className="text-slate-700 dark:text-slate-300">
+                                                                        {p.user_name || 'Anonymous'}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </main>
 

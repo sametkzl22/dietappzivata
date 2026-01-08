@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
     Mail,
@@ -9,7 +9,8 @@ import {
     User,
     Search,
     ChevronLeft,
-    Users
+    Users,
+    RefreshCw
 } from 'lucide-react';
 import * as api from '@/lib/api';
 import { type User as UserType, type DirectMessage, type Conversation, type UserSimple } from '@/lib/api';
@@ -29,9 +30,38 @@ export default function MessagesPage() {
     const [messageText, setMessageText] = useState('');
     const [isSending, setIsSending] = useState(false);
 
-    // Admin: user list for broadcast
+    // User list for new conversation
     const [allUsers, setAllUsers] = useState<UserSimple[]>([]);
     const [showUserPicker, setShowUserPicker] = useState(false);
+
+    // Refs for polling and scroll position preservation
+    const pollingRef = useRef<NodeJS.Timeout | null>(null);
+    const chatContainerRef = useRef<HTMLDivElement>(null);
+    const selectedUserIdRef = useRef<number | null>(null);
+
+    // Keep ref in sync with state for polling callback
+    useEffect(() => {
+        selectedUserIdRef.current = selectedUserId;
+    }, [selectedUserId]);
+
+    // Fetch conversation messages (used for polling)
+    const fetchConversation = useCallback(async (userId: number) => {
+        const conversationMessages = await api.getConversation(userId);
+
+        // Only update if there are new messages (avoid unnecessary re-renders)
+        setMessages(prevMessages => {
+            if (conversationMessages.length !== prevMessages.length) {
+                return conversationMessages;
+            }
+            // Check if the last message is different
+            const lastNew = conversationMessages[conversationMessages.length - 1];
+            const lastOld = prevMessages[prevMessages.length - 1];
+            if (lastNew?.id !== lastOld?.id) {
+                return conversationMessages;
+            }
+            return prevMessages;
+        });
+    }, []);
 
     useEffect(() => {
         async function fetchData() {
@@ -54,23 +84,68 @@ export default function MessagesPage() {
             setUser(currentUser);
             setConversations(inbox);
 
-            // Fetch all users for new conversation (admin uses getUsersForMessaging, others use getAllUsers)
+            // Fetch all users for new conversation
             const users = currentUser.is_superuser
                 ? await api.getUsersForMessaging()
                 : await api.getAllUsers();
-            // Filter out current user from the list
             setAllUsers(users.filter(u => u.id !== currentUser.id));
 
             // Check for user ID in URL params
             const userIdParam = searchParams.get('userId');
             if (userIdParam) {
-                selectConversation(parseInt(userIdParam), null);
+                const userId = parseInt(userIdParam);
+                setSelectedUserId(userId);
+                setIsLoadingMessages(true);
+                const conversationMessages = await api.getConversation(userId);
+                setMessages(conversationMessages);
+                setIsLoadingMessages(false);
             }
 
             setIsLoading(false);
         }
 
         fetchData();
+
+        // Set up polling for messages every 3 seconds
+        pollingRef.current = setInterval(async () => {
+            const currentSelectedUserId = selectedUserIdRef.current;
+            if (currentSelectedUserId) {
+                // Fetch messages for current conversation
+                const conversationMessages = await api.getConversation(currentSelectedUserId);
+                setMessages(prevMessages => {
+                    if (conversationMessages.length !== prevMessages.length) {
+                        // Scroll to bottom on new messages
+                        setTimeout(() => {
+                            if (chatContainerRef.current) {
+                                chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                            }
+                        }, 100);
+                        return conversationMessages;
+                    }
+                    const lastNew = conversationMessages[conversationMessages.length - 1];
+                    const lastOld = prevMessages[prevMessages.length - 1];
+                    if (lastNew?.id !== lastOld?.id) {
+                        setTimeout(() => {
+                            if (chatContainerRef.current) {
+                                chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                            }
+                        }, 100);
+                        return conversationMessages;
+                    }
+                    return prevMessages;
+                });
+            }
+
+            // Also refresh inbox
+            const inbox = await api.getInbox();
+            setConversations(inbox);
+        }, 3000);
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+            }
+        };
     }, [router, searchParams]);
 
     const selectConversation = async (userId: number, userName: string | null) => {
@@ -88,34 +163,52 @@ export default function MessagesPage() {
         ));
 
         setIsLoadingMessages(false);
+
+        // Scroll to bottom
+        setTimeout(() => {
+            if (chatContainerRef.current) {
+                chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+            }
+        }, 100);
     };
 
     const handleSendMessage = async () => {
         if (!messageText.trim() || !selectedUserId) return;
+        const messageToSend = messageText;
+        setMessageText(''); // Clear immediately for better UX
         setIsSending(true);
 
-        const newMessage = await api.sendMessage(selectedUserId, messageText);
+        const newMessage = await api.sendMessage(selectedUserId, messageToSend);
         if (newMessage) {
-            setMessages([...messages, newMessage]);
-            setMessageText('');
+            setMessages(prev => [...prev, newMessage]);
 
             // Update conversations list
             const existingConvo = conversations.find(c => c.other_user_id === selectedUserId);
             if (existingConvo) {
                 setConversations(conversations.map(c =>
                     c.other_user_id === selectedUserId
-                        ? { ...c, last_message: messageText, last_message_time: new Date().toISOString() }
+                        ? { ...c, last_message: messageToSend, last_message_time: new Date().toISOString() }
                         : c
                 ));
             } else {
                 setConversations([{
                     other_user_id: selectedUserId,
                     other_user_name: selectedUserName,
-                    last_message: messageText,
+                    last_message: messageToSend,
                     last_message_time: new Date().toISOString(),
                     unread_count: 0
                 }, ...conversations]);
             }
+
+            // Scroll to bottom
+            setTimeout(() => {
+                if (chatContainerRef.current) {
+                    chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+                }
+            }, 100);
+        } else {
+            // Restore message if send failed
+            setMessageText(messageToSend);
         }
         setIsSending(false);
     };
@@ -138,9 +231,9 @@ export default function MessagesPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 pt-20">
             {/* Header */}
-            <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg sticky top-0 z-30">
+            <header className="border-b border-slate-100 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg fixed top-16 left-0 right-0 z-20">
                 <div className="mx-auto max-w-6xl px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
@@ -149,7 +242,10 @@ export default function MessagesPage() {
                             </div>
                             <div>
                                 <h1 className="text-xl font-bold text-slate-900 dark:text-white">Messages</h1>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">Direct conversations</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                    <RefreshCw className="h-3 w-3 animate-spin" />
+                                    Real-time updates
+                                </p>
                             </div>
                         </div>
                         {/* New Conversation Button */}
@@ -164,13 +260,13 @@ export default function MessagesPage() {
                 </div>
             </header>
 
-            <main className="mx-auto max-w-6xl px-6 py-6">
+            <main className="mx-auto max-w-6xl px-6 py-6 mt-16">
                 {isLoading ? (
                     <div className="flex justify-center py-12">
                         <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
                     </div>
                 ) : (
-                    <div className="flex gap-6 h-[calc(100vh-180px)]">
+                    <div className="flex gap-6 h-[calc(100vh-220px)]">
                         {/* Sidebar - Conversations List */}
                         <div className="w-80 flex-shrink-0 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col">
                             <div className="p-4 border-b border-slate-100 dark:border-slate-800">
@@ -204,6 +300,7 @@ export default function MessagesPage() {
                                     <div className="p-6 text-center text-slate-500 dark:text-slate-400">
                                         <Mail className="h-8 w-8 mx-auto mb-2 opacity-50" />
                                         <p className="text-sm">No conversations yet</p>
+                                        <p className="text-xs mt-1">Click "New Chat" to start</p>
                                     </div>
                                 ) : (
                                     conversations.map((convo) => (
@@ -266,15 +363,22 @@ export default function MessagesPage() {
                                         <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center">
                                             <User className="h-5 w-5 text-white" />
                                         </div>
-                                        <div>
+                                        <div className="flex-1">
                                             <h3 className="font-semibold text-slate-900 dark:text-white">
                                                 {selectedUserName || 'User'}
                                             </h3>
+                                            <p className="text-xs text-green-500 flex items-center gap-1">
+                                                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                                Live chat
+                                            </p>
                                         </div>
                                     </div>
 
                                     {/* Messages */}
-                                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                                    <div
+                                        ref={chatContainerRef}
+                                        className="flex-1 overflow-y-auto p-4 space-y-3"
+                                    >
                                         {isLoadingMessages ? (
                                             <div className="flex justify-center py-8">
                                                 <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -314,7 +418,7 @@ export default function MessagesPage() {
                                                 placeholder="Type a message..."
                                                 value={messageText}
                                                 onChange={(e) => setMessageText(e.target.value)}
-                                                onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+                                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
                                                 className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-slate-900 dark:text-white placeholder:text-slate-400 focus:border-indigo-500 focus:ring-indigo-500"
                                             />
                                             <button
